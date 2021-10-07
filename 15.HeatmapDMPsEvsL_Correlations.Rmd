@@ -1,0 +1,3870 @@
+---
+title: "Heatmaps_families"
+author: "Bruna Oriol"
+date: "21/2/2021"
+output: html_document
+---
+
+#DNAmeth
+
+File "pathways_EvsLw6.csv" is exported from the Enrichment Map application in cytoscape. 
+```{r}
+w6w0pathways <- read.csv("../pathways_EvsLw6.csv")
+EvsLw6 <- read.table("../Meth/Analysis450K/OutputFiles/DMPs_rb/LimmaBlockAnnot/ w6_FastvsLate.txt") 
+```
+
+
+#In DMPs EvsLw6 with a logFC > |0.5|
+```{r}
+
+#Add gene name and select significant DMOs
+Gene <- sapply(sapply(strsplit(as.character(EvsLw6$UCSC_RefGene_Name), ";"), unique), function(x) paste(x, collapse = "_"))
+EvsLw6$Gene <- Gene
+#EvsLw6.sig <- subset(EvsLw6, EvsLw6$P.Value < 0.05 )
+
+#In DMPs EvsLw6 with a logFC > |0.5|
+EvsLw6.sig <- subset(EvsLw6, EvsLw6$P.Value < 0.05 & abs(EvsLw6$logFC) > 0.5)
+
+#Genes in each module
+modules <- unique(as.character(w6w0pathways$Module))
+length(modules)
+Module_Name <- NULL
+Genes_in_Module <- list()
+
+for(i in 1: length(modules)){
+  mod <- modules[i]
+  Module_Name <- c(Module_Name,mod)
+  
+  path_sel <- subset(w6w0pathways,w6w0pathways$Module == mod)
+  genes_sel <- unique(unlist(strsplit(as.character(path_sel$Genes), "[|]")))
+  Genes_in_Module[[i]] <- genes_sel
+}
+names(Genes_in_Module) <- Module_Name
+
+#Duplicated genes
+Genes_EvsLw6.dup <- EvsLw6.sig[grep("_", EvsLw6.sig$Gene),] 
+Genes_EvsLw6.dup2 <- EvsLw6.sig[-grep("_", EvsLw6.sig$Gene),] 
+
+df <- Genes_EvsLw6.dup[1,]
+
+for(i in 1:dim(Genes_EvsLw6.dup)[1]){
+  CpG <- Genes_EvsLw6.dup$Row.names[i]
+  DMP2 <- Genes_EvsLw6.dup[which(Genes_EvsLw6.dup$Row.names == CpG),]
+  Name <- unlist(sapply(strsplit(as.character(DMP2$Gene), "_"), unique))
+  n <- length(Name)
+  j = 0
+  while(j<n){
+    j = j+1
+    DMP2$Gene <- as.character(Name[j])
+    df <- rbind(df, DMP2)}}
+
+Genes_EvsLw6.ok <- rbind(Genes_EvsLw6.dup2, df[-1,])
+
+
+ann450 <- read.table("../Meth/Analysis450K/annot450.txt", stringsAsFactors = FALSE)
+ann450$Gene <- sapply(sapply(strsplit(ann450$UCSC_RefGene_Name, ";"), unique), function(x) ifelse(length(x)>1, paste(x[1],x[2], sep = "_"), x[1]))
+ann450$CpG_Gene <- paste(rownames(ann450), ann450$Gene, sep = "_")
+               
+```
+
+#HIV
+Take the genes in the HIV module
+```{r}
+
+HIV <- unique(c(Genes_in_Module$`HIV and infectious disease`))
+HIV.df <- data.frame(HIV)
+length(HIV)# 2174
+
+library(gprofiler2)
+HIVconvert <- gconvert(query = as.character(HIV) , organism = "hsapiens",
+         target="UCSC", mthreshold = Inf, filter_na = TRUE)
+
+HIV.genes <- unique(c(HIVconvert$input, HIVconvert$name))
+
+
+#CpGs and genes associated with HIV response
+EvsLw6.HIV <- subset(Genes_EvsLw6.ok, Genes_EvsLw6.ok$Gene %in% HIV.genes) #1738
+length(unique(EvsLw6.HIV$Gene))#26
+```
+
+Take the methylation levels of genes in HIV module
+```{r}
+#Load libraries for heatmap
+library(ComplexHeatmap)
+library(circlize)
+library(gplots)
+
+DNAMethyl <- read.table("../Meth/Analysis450K/OutputFiles/QNMval_sel.txt")
+ #A14 already off. Variance selection done. 
+DNAMethyl <- DNAMethyl[, -grep("B03|B07",colnames(DNAMethyl))]
+DNAMethyl1 <- DNAMethyl[, grep("w6", colnames(DNAMethyl))]
+
+
+#Select CpGs
+CpGs_HIV <-paste0("^", as.character(EvsLw6.HIV$Row.names))
+CpGs_HIV_ok <-paste0(CpGs_HIV, collapse = "|")
+
+#Select methylation value of CpGs
+DNAMethyl1.HIV <- DNAMethyl1[grep(CpGs_HIV_ok, rownames(DNAMethyl1)), ]
+ann450.HIV <- ann450[rownames(DNAMethyl1.HIV),]
+df.HIV <- data.frame(rownames(ann450.HIV), rownames(DNAMethyl1.HIV))
+rownames(DNAMethyl1.HIV) <- ann450.HIV$CpG_Gene
+
+
+#Matrix of methylation levels HIV CpG-Gene
+mat.HIV <- as.matrix(DNAMethyl1.HIV)
+colnames(mat.HIV) <- gsub(".w6", "" ,colnames(mat.HIV))
+mat.HIV <- mat.HIV[, c("B13", "A02", "A05", "A09", "A04", "B14", "B10", "B06", "A15", "A13", "A12", "B05")]
+
+#Define groups
+Rebound2 <- colnames(mat.HIV )
+Late <- grep("A02|A05|A09|B13", Rebound2)
+Rebound2[Late] <- "orange"
+Rebound2[-Late] <- "blue"
+
+# group = kmeans(t(mat.HIV), centers = 2)$cluster
+# Heatmap(mat.HIV, name = "mat", cluster_columns = cluster_within_group(mat.HIV, group),show_column_dend = FALSE)
+
+#Z-score methylation values
+mat.HIV2 <- scale(t(mat.HIV))
+
+Heatmap(t(mat.HIV2), show_column_dend = FALSE, cluster_columns = TRUE,col = colorRamp2(c(-2,2), c( c("red", "yellow"))))
+
+```
+
+#Correlations of HIV Genes. 
+
+```{r}
+
+cl_params <- read.csv("../../BCN02-INFO/ClincalandImmuneinfow6_viral.csv", header = TRUE, stringsAsFactors = FALSE)
+cl_params.w6 <- cl_params[,c(1, grep("w6", colnames(cl_params)))]
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params.w6) <- cl_params.w6$X
+colnames(cl_params.w6) <- c("patient", "Proviral", "SCA", "CA_RNA", "H3Ac")
+cl_params.w6 <- cl_params.w6[grep(paste0(colnames(mat.HIV), collapse = "|"), rownames(cl_params.w6)),]
+cl_params.w6 <- cl_params.w6[colnames(mat.HIV),]
+
+names.order <- data.frame(cl_params.w6$patient, colnames(mat.HIV))
+
+
+# Transpose beta values for selected cg --> Patients in rows now and cg probes in columns
+# there's no longer the name of the cg
+Data.HIV <- t(mat.HIV)
+Data.HIV[1:10, 1:10]
+dim(Data.HIV)
+
+#Correlation with Proviral (HIV-DNA)
+# Bind to Data 3 the values of Proviral
+Data.HIV_Proviral <- cbind(Data.HIV, cl_params.w6$Proviral)
+colnames(Data.HIV_Proviral) <- c(colnames(Data.HIV), "Proviral")
+id2 <- colnames(Data.HIV_Proviral)
+Data.HIV_Proviral <- apply(Data.HIV_Proviral, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Proviral
+library(Hmisc)
+res_corrProviral <- rcorr(Data.HIV_Proviral,type="spearman") #Correlation between columns
+mat_corrProviral <- res_corrProviral$r
+pval_corrProviral <- res_corrProviral$P
+
+#Select all the correlations with Proviral
+df_Proviral <- data.frame(mat_corrProviral[nrow(mat_corrProviral),], pval_corrProviral[nrow(pval_corrProviral),])
+
+df_Proviral$Name <- c(rownames(df_Proviral))
+df_Proviral$class <- "Proviral"
+colnames(df_Proviral) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Proviral with Proviral, only correlations of CpG with Proviral now
+df_Proviral <- df_Proviral[-nrow(df_Proviral),]
+df_Proviral$qvalue <- p.adjust(df_Proviral$pval, method = "fdr")
+df_Proviral <- df_Proviral[order(abs(df_Proviral$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+#Validate results
+cor.test(as.numeric(mat.HIV["cg24004745_IL1RAP",]), as.numeric(cl_params.w6$Proviral), method = "spearman") # -0.3852896 
+
+
+#Correlation with SCA (ultrasensitive VL)
+Data.HIV_SCA <- cbind(Data.HIV, cl_params.w6$SCA)
+id2 <- colnames(Data.HIV_SCA)
+Data.HIV_SCA <- apply(Data.HIV_SCA, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with SCA
+library(Hmisc)
+res_corrSCA <- rcorr(Data.HIV_SCA,type="spearman") #Correlation between columns
+mat_corrSCA <- res_corrSCA$r
+pval_corrSCA <- res_corrSCA$P
+
+#Select all the correlations with SCA
+df_SCA <- data.frame(mat_corrSCA[nrow(mat_corrSCA),], pval_corrSCA[nrow(pval_corrSCA),])
+
+df_SCA$Name <- c(rownames(df_SCA))
+df_SCA$class <- "SCA"
+colnames(df_SCA) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of SCA with SCA, only correlations of CpG with SCA now
+df_SCA <- df_SCA[-nrow(df_SCA),]
+df_SCA$qvalue <- p.adjust(df_SCA$pval, method = "fdr")
+df_SCA <- df_SCA[order(abs(df_SCA$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.HIV["cg24004745_IL1RAP",]), as.numeric(cl_params.w6$SCA), method = "spearman") # -0.3537, p-value = 0.259
+
+
+#CA-RNA
+Data.HIV_CA_RNA <- cbind(Data.HIV, cl_params.w6$CA_RNA)
+rownames(Data.HIV_CA_RNA)
+id2 <- colnames(Data.HIV_CA_RNA)
+Data.HIV_CA_RNA <- apply(Data.HIV_CA_RNA, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with CA_RNA
+library(Hmisc)
+res_corrCA_RNA <- rcorr(Data.HIV_CA_RNA,type="spearman") #Correlation between columns
+mat_corrCA_RNA <- res_corrCA_RNA$r
+pval_corrCA_RNA <- res_corrCA_RNA$P
+
+#Select all the correlations with CA_RNA
+df_CA_RNA <- data.frame(mat_corrCA_RNA[nrow(mat_corrCA_RNA),], pval_corrCA_RNA[nrow(pval_corrCA_RNA),])
+
+df_CA_RNA$Name <- c(rownames(df_CA_RNA))
+df_CA_RNA$class <- "CA_RNA"
+colnames(df_CA_RNA) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of CA_RNA with CA_RNA, only correlations of CpG with CA_RNA now
+df_CA_RNA <- df_CA_RNA[-nrow(df_CA_RNA),]
+df_CA_RNA$qvalue <- p.adjust(df_CA_RNA$pval, method = "fdr")
+df_CA_RNA <- df_CA_RNA[order(abs(df_CA_RNA$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.HIV["cg24004745_IL1RAP",]), as.numeric(cl_params.w6$CA_RNA), method = "spearman") # -0.3537, p-value = 0.259
+
+
+#H3Ac
+Data.HIV_H3Ac <- cbind(Data.HIV, cl_params.w6$H3Ac)
+rownames(Data.HIV_H3Ac)
+id2 <- colnames(Data.HIV_H3Ac)
+Data.HIV_H3Ac <- apply(Data.HIV_H3Ac, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with H3Ac
+library(Hmisc)
+res_corrH3Ac <- rcorr(Data.HIV_H3Ac,type="spearman") #Correlation between columns
+mat_corrH3Ac <- res_corrH3Ac$r
+pval_corrH3Ac <- res_corrH3Ac$P
+
+#Select all the correlations with H3Ac
+df_H3Ac <- data.frame(mat_corrH3Ac[nrow(mat_corrH3Ac),], pval_corrH3Ac[nrow(pval_corrH3Ac),])
+
+df_H3Ac$Name <- c(rownames(df_H3Ac))
+df_H3Ac$class <- "H3Ac"
+colnames(df_H3Ac) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of H3Ac with H3Ac, only correlations of CpG with H3Ac now
+df_H3Ac <- df_H3Ac[-nrow(df_H3Ac),]
+df_H3Ac$qvalue <- p.adjust(df_H3Ac$pval, method = "fdr")
+df_H3Ac <- df_H3Ac[order(abs(df_H3Ac$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+
+cor.test(as.numeric(mat.HIV["cg24004745_IL1RAP",]), as.numeric(cl_params.w6$H3Ac), method = "spearman") # -0.3537, p-value = 0.259
+
+
+#ELISPOT Data
+
+cl_params3.w6 <- read.csv("../../BCN02-INFO/ELISPOT._datacsv.csv", header = TRUE, stringsAsFactors = FALSE)
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params3.w6) <- cl_params3.w6$X
+colnames(cl_params3.w6) <- c("patient", "Magnitude_HIVconsv","Breadth_HIVconsv",
+                             "Magnitude_HIVtotal","Breadth_HIVtotal"  )
+cl_params3.w6 <- cl_params3.w6[grep(paste0(colnames(mat.HIV), collapse = "|"), rownames(cl_params3.w6)),]
+cl_params3.w6 <- cl_params3.w6[colnames(mat.HIV),]
+
+names.order <- data.frame(cl_params3.w6$patient, colnames(mat.HIV))
+
+
+#Correlation with Magnitude agains HIVconsv
+# Bind to Data 3 the values of Magnitude_HIVconsv
+Data.HIV_Magnitude_HIVconsv <- cbind(Data.HIV, cl_params3.w6$Magnitude_HIVconsv)
+rownames(Data.HIV_Magnitude_HIVconsv)
+colnames(Data.HIV_Magnitude_HIVconsv) <- c(colnames(Data.HIV), "Magnitude_HIVconsv")
+id2 <- colnames(Data.HIV_Magnitude_HIVconsv)
+Data.HIV_Magnitude_HIVconsv <- apply(Data.HIV_Magnitude_HIVconsv, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Magnitude_HIVconsv
+library(Hmisc)
+res_corrMagnitude_HIVconsv <- rcorr(Data.HIV_Magnitude_HIVconsv,type="spearman") #Correlation between columns
+mat_corrMagnitude_HIVconsv <- res_corrMagnitude_HIVconsv$r
+pval_corrMagnitude_HIVconsv <- res_corrMagnitude_HIVconsv$P
+
+#Select all the correlations with Magnitude_HIVconsv
+df_Magnitude_HIVconsv <- data.frame(mat_corrMagnitude_HIVconsv[nrow(mat_corrMagnitude_HIVconsv),], pval_corrMagnitude_HIVconsv[nrow(pval_corrMagnitude_HIVconsv),])
+
+df_Magnitude_HIVconsv$Name <- c(rownames(df_Magnitude_HIVconsv))
+df_Magnitude_HIVconsv$class <- "Magnitude_HIVconsv"
+colnames(df_Magnitude_HIVconsv) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Magnitude_HIVconsv with Magnitude_HIVconsv, only correlations of CpG with Magnitude_HIVconsv now
+df_Magnitude_HIVconsv <- df_Magnitude_HIVconsv[-nrow(df_Magnitude_HIVconsv),]
+df_Magnitude_HIVconsv$qvalue <- p.adjust(df_Magnitude_HIVconsv$pval, method = "fdr")
+df_Magnitude_HIVconsv <- df_Magnitude_HIVconsv[order(abs(df_Magnitude_HIVconsv$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.HIV_Magnitude_HIVconsv[,"cg24004745_IL1RAP"]), as.numeric(cl_params3.w6$Magnitude_HIVconsv), method = "spearman") # R-0.3852896  p = 0.21
+
+# Bind to Data 3 the values of Breadth_HIVconsv
+Data.HIV_Breadth_HIVconsv <- cbind(Data.HIV, cl_params3.w6$Breadth_HIVconsv)
+rownames(Data.HIV_Breadth_HIVconsv)
+colnames(Data.HIV_Breadth_HIVconsv) <- c(colnames(Data.HIV), "Breadth_HIVconsv")
+id2 <- colnames(Data.HIV_Breadth_HIVconsv)
+Data.HIV_Breadth_HIVconsv <- apply(Data.HIV_Breadth_HIVconsv, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Breadth_HIVconsv
+library(Hmisc)
+res_corrBreadth_HIVconsv <- rcorr(Data.HIV_Breadth_HIVconsv,type="spearman") #Correlation between columns
+mat_corrBreadth_HIVconsv <- res_corrBreadth_HIVconsv$r
+pval_corrBreadth_HIVconsv <- res_corrBreadth_HIVconsv$P
+
+#Select all the correlations with Breadth_HIVconsv
+df_Breadth_HIVconsv <- data.frame(mat_corrBreadth_HIVconsv[nrow(mat_corrBreadth_HIVconsv),], pval_corrBreadth_HIVconsv[nrow(pval_corrBreadth_HIVconsv),])
+
+df_Breadth_HIVconsv$Name <- c(rownames(df_Breadth_HIVconsv))
+df_Breadth_HIVconsv$class <- "Breadth_HIVconsv"
+colnames(df_Breadth_HIVconsv) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Breadth_HIVconsv with Breadth_HIVconsv, only correlations of CpG with Breadth_HIVconsv now
+df_Breadth_HIVconsv <- df_Breadth_HIVconsv[-nrow(df_Breadth_HIVconsv),]
+df_Breadth_HIVconsv$qvalue <- p.adjust(df_Breadth_HIVconsv$pval, method = "fdr")
+df_Breadth_HIVconsv <- df_Breadth_HIVconsv[order(abs(df_Breadth_HIVconsv$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.HIV_Breadth_HIVconsv[,"cg24004745_IL1RAP"]), as.numeric(cl_params3.w6$Breadth_HIVconsv), method = "spearman") # R-0.3852896  p = 0.21
+
+
+# Bind to Data 3 the values of Magnitude_HIVtotal
+Data.HIV_Magnitude_HIVtotal <- cbind(Data.HIV, cl_params3.w6$Magnitude_HIVtotal)
+rownames(Data.HIV_Magnitude_HIVtotal)
+colnames(Data.HIV_Magnitude_HIVtotal) <- c(colnames(Data.HIV), "Magnitude_HIVtotal")
+id2 <- colnames(Data.HIV_Magnitude_HIVtotal)
+Data.HIV_Magnitude_HIVtotal <- apply(Data.HIV_Magnitude_HIVtotal, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Magnitude_HIVtotal
+library(Hmisc)
+res_corrMagnitude_HIVtotal <- rcorr(Data.HIV_Magnitude_HIVtotal,type="spearman") #Correlation between columns
+mat_corrMagnitude_HIVtotal <- res_corrMagnitude_HIVtotal$r
+pval_corrMagnitude_HIVtotal <- res_corrMagnitude_HIVtotal$P
+
+#Select all the correlations with Magnitude_HIVtotal
+df_Magnitude_HIVtotal <- data.frame(mat_corrMagnitude_HIVtotal[nrow(mat_corrMagnitude_HIVtotal),], pval_corrMagnitude_HIVtotal[nrow(pval_corrMagnitude_HIVtotal),])
+
+df_Magnitude_HIVtotal$Name <- c(rownames(df_Magnitude_HIVtotal))
+df_Magnitude_HIVtotal$class <- "Magnitude_HIVtotal"
+colnames(df_Magnitude_HIVtotal) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Magnitude_HIVtotal with Magnitude_HIVtotal, only correlations of CpG with Magnitude_HIVtotal now
+df_Magnitude_HIVtotal <- df_Magnitude_HIVtotal[-nrow(df_Magnitude_HIVtotal),]
+df_Magnitude_HIVtotal$qvalue <- p.adjust(df_Magnitude_HIVtotal$pval, method = "fdr")
+df_Magnitude_HIVtotal <- df_Magnitude_HIVtotal[order(abs(df_Magnitude_HIVtotal$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.HIV_Magnitude_HIVtotal[,"cg24004745_IL1RAP"]), as.numeric(cl_params3.w6$Magnitude_HIVtotal), method = "spearman") # R-0.3852896  p = 0.21
+
+
+# Bind to Data 3 the values of Breadth_HIVtotal
+Data.HIV_Breadth_HIVtotal <- cbind(Data.HIV, cl_params3.w6$Breadth_HIVtotal)
+rownames(Data.HIV_Breadth_HIVtotal)
+colnames(Data.HIV_Breadth_HIVtotal) <- c(colnames(Data.HIV), "Breadth_HIVtotal")
+id2 <- colnames(Data.HIV_Breadth_HIVtotal)
+Data.HIV_Breadth_HIVtotal <- apply(Data.HIV_Breadth_HIVtotal, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Breadth_HIVtotal
+library(Hmisc)
+res_corrBreadth_HIVtotal <- rcorr(Data.HIV_Breadth_HIVtotal,type="spearman") #Correlation between columns
+mat_corrBreadth_HIVtotal <- res_corrBreadth_HIVtotal$r
+pval_corrBreadth_HIVtotal <- res_corrBreadth_HIVtotal$P
+
+#Select all the correlations with Breadth_HIVtotal
+df_Breadth_HIVtotal <- data.frame(mat_corrBreadth_HIVtotal[nrow(mat_corrBreadth_HIVtotal),], pval_corrBreadth_HIVtotal[nrow(pval_corrBreadth_HIVtotal),])
+
+df_Breadth_HIVtotal$Name <- c(rownames(df_Breadth_HIVtotal))
+df_Breadth_HIVtotal$class <- "Breadth_HIVtotal"
+colnames(df_Breadth_HIVtotal) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Breadth_HIVtotal with Breadth_HIVtotal, only correlations of CpG with Breadth_HIVtotal now
+df_Breadth_HIVtotal <- df_Breadth_HIVtotal[-nrow(df_Breadth_HIVtotal),]
+df_Breadth_HIVtotal$qvalue <- p.adjust(df_Breadth_HIVtotal$pval, method = "fdr")
+df_Breadth_HIVtotal <- df_Breadth_HIVtotal[order(abs(df_Breadth_HIVtotal$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.HIV_Breadth_HIVtotal[,"cg24004745_IL1RAP"]), as.numeric(cl_params3.w6$Breadth_HIVtotal), method = "spearman") # R-0.3852896  p = 0.21
+
+
+#Data VL at day of cART ressumption and time to rebound. 
+
+cl_params4.w6 <- read.csv("../../BCN02-INFO/MAP_outcome.csv", header = TRUE, stringsAsFactors = FALSE)
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params4.w6) <- cl_params4.w6$PatientID
+colnames(cl_params4.w6) <- c("patient", "VL_MAP","time_MAP"  )
+cl_params4.w6 <- cl_params4.w6[grep(paste0(colnames(mat.HIV), collapse = "|"), rownames(cl_params4.w6)),]
+cl_params4.w6 <- cl_params4.w6[colnames(mat.HIV),]
+
+names.order <- data.frame(cl_params4.w6$patient, colnames(mat.HIV))
+
+
+#VL at cART ressumption
+
+# Bind to Data 3 the values of VL_MAP
+Data.HIV_VL_MAP <- cbind(Data.HIV, cl_params4.w6$VL_MAP)
+colnames(Data.HIV_VL_MAP) <- c(colnames(Data.HIV), "VL_MAP")
+id2 <- colnames(Data.HIV_VL_MAP)
+Data.HIV_VL_MAP <- apply(Data.HIV_VL_MAP, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with VL_MAP
+library(Hmisc)
+res_corrVL_MAP <- rcorr(Data.HIV_VL_MAP,type="spearman") #Correlation between columns
+mat_corrVL_MAP <- res_corrVL_MAP$r
+pval_corrVL_MAP <- res_corrVL_MAP$P
+
+#Select all the correlations with VL_MAP
+df_VL_MAP <- data.frame(mat_corrVL_MAP[nrow(mat_corrVL_MAP),], pval_corrVL_MAP[nrow(pval_corrVL_MAP),])
+
+df_VL_MAP$Name <- c(rownames(df_VL_MAP))
+df_VL_MAP$class <- "VL_MAP"
+colnames(df_VL_MAP) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of VL_MAP with VL_MAP, only correlations of CpG with VL_MAP now
+df_VL_MAP <- df_VL_MAP[-nrow(df_VL_MAP),]
+df_VL_MAP$qvalue <- p.adjust(df_VL_MAP$pval, method = "fdr")
+df_VL_MAP <- df_VL_MAP[order(abs(df_VL_MAP$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.HIV_VL_MAP[,"cg05265849_IL6"]), as.numeric(cl_params4.w6$VL_MAP), method = "spearman") # R = 0.571  p = 0.05
+
+cor.test(as.numeric(Data.HIV_Breadth_HIVtotal[,"cg24004745_IL1RAP"]), as.numeric(cl_params4.w6$VL_MAP), method = "spearman") # R-0.238  p = 0.456
+
+
+# Bind to Data 3 the values of time_MAP
+Data.HIV_time_MAP <- cbind(Data.HIV, cl_params4.w6$time_MAP)
+rownames(Data.HIV_time_MAP)
+colnames(Data.HIV_time_MAP) <- c(colnames(Data.HIV), "time_MAP")
+id2 <- colnames(Data.HIV_time_MAP)
+Data.HIV_time_MAP <- apply(Data.HIV_time_MAP, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with time_MAP
+library(Hmisc)
+res_corrtime_MAP <- rcorr(Data.HIV_time_MAP,type="spearman") #Correlation between columns
+mat_corrtime_MAP <- res_corrtime_MAP$r
+pval_corrtime_MAP <- res_corrtime_MAP$P
+
+#Select all the correlations with time_MAP
+df_time_MAP <- data.frame(mat_corrtime_MAP[nrow(mat_corrtime_MAP),], pval_corrtime_MAP[nrow(pval_corrtime_MAP),])
+
+df_time_MAP$Name <- c(rownames(df_time_MAP))
+df_time_MAP$class <- "time_MAP"
+colnames(df_time_MAP) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of time_MAP with time_MAP, only correlations of CpG with time_MAP now
+df_time_MAP <- df_time_MAP[-nrow(df_time_MAP),]
+df_time_MAP$qvalue <- p.adjust(df_time_MAP$pval, method = "fdr")
+df_time_MAP <- df_time_MAP[order(abs(df_time_MAP$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.HIV_time_MAP[,"cg24004745_IL1RAP"]), as.numeric(cl_params4.w6$time_MAP), method = "spearman") # R 0.380  p = 0.227
+
+
+
+#Data VL at day of cART ressumption and time to rebound. 
+
+
+cl_params5.w6 <- read.csv("../../BCN02-INFO/preCART_info.csv", header = TRUE, stringsAsFactors = FALSE)
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params5.w6) <- cl_params5.w6$PatientID
+colnames(cl_params5.w6) <- c("patient",  "Time_on_cART_BCN02", "VL_cART_initiation", "HIV_tocART", "UD_MAP" )
+cl_params5.w6 <- cl_params5.w6[grep(paste0(colnames(mat.HIV), collapse = "|"), rownames(cl_params5.w6)),]
+cl_params5.w6 <- cl_params5.w6[colnames(mat.HIV),]
+
+names.order <- data.frame(cl_params5.w6$patient, colnames(mat.HIV))
+
+
+# Bind to Data 3 the values of Time_on_cART_BCN02
+Data.HIV_Time_on_cART_BCN02 <- cbind(Data.HIV, cl_params5.w6$Time_on_cART_BCN02)
+rownames(Data.HIV_Time_on_cART_BCN02)
+colnames(Data.HIV_Time_on_cART_BCN02) <- c(colnames(Data.HIV), "Time_on_cART_BCN02")
+id2 <- colnames(Data.HIV_Time_on_cART_BCN02)
+Data.HIV_Time_on_cART_BCN02 <- apply(Data.HIV_Time_on_cART_BCN02, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Time_on_cART_BCN02
+library(Hmisc)
+res_corrTime_on_cART_BCN02 <- rcorr(Data.HIV_Time_on_cART_BCN02,type="spearman") #Correlation between columns
+mat_corrTime_on_cART_BCN02 <- res_corrTime_on_cART_BCN02$r
+pval_corrTime_on_cART_BCN02 <- res_corrTime_on_cART_BCN02$P
+
+#Select all the correlations with Time_on_cART_BCN02
+df_Time_on_cART_BCN02 <- data.frame(mat_corrTime_on_cART_BCN02[nrow(mat_corrTime_on_cART_BCN02),], pval_corrTime_on_cART_BCN02[nrow(pval_corrTime_on_cART_BCN02),])
+
+df_Time_on_cART_BCN02$Name <- c(rownames(df_Time_on_cART_BCN02))
+df_Time_on_cART_BCN02$class <- "Time_on_cART_BCN02"
+colnames(df_Time_on_cART_BCN02) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Time_on_cART_BCN02 with Time_on_cART_BCN02, only correlations of CpG with Time_on_cART_BCN02 now
+df_Time_on_cART_BCN02 <- df_Time_on_cART_BCN02[-nrow(df_Time_on_cART_BCN02),]
+df_Time_on_cART_BCN02$qvalue <- p.adjust(df_Time_on_cART_BCN02$pval, method = "fdr")
+df_Time_on_cART_BCN02 <- df_Time_on_cART_BCN02[order(abs(df_Time_on_cART_BCN02$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.HIV_Time_on_cART_BCN02[,"cg24004745_IL1RAP"]), as.numeric(cl_params5.w6$Time_on_cART_BCN02), method = "spearman") # R-0.3852896  p = 0.21
+
+
+# Bind to Data 3 the values of VL_cART_initiation
+Data.HIV_VL_cART_initiation <- cbind(Data.HIV, cl_params5.w6$VL_cART_initiation)
+rownames(Data.HIV_VL_cART_initiation)
+colnames(Data.HIV_VL_cART_initiation) <- c(colnames(Data.HIV), "VL_cART_initiation")
+id2 <- colnames(Data.HIV_VL_cART_initiation)
+Data.HIV_VL_cART_initiation <- apply(Data.HIV_VL_cART_initiation, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with VL_cART_initiation
+library(Hmisc)
+res_corrVL_cART_initiation <- rcorr(Data.HIV_VL_cART_initiation,type="spearman") #Correlation between columns
+mat_corrVL_cART_initiation <- res_corrVL_cART_initiation$r
+pval_corrVL_cART_initiation <- res_corrVL_cART_initiation$P
+
+#Select all the correlations with VL_cART_initiation
+df_VL_cART_initiation <- data.frame(mat_corrVL_cART_initiation[nrow(mat_corrVL_cART_initiation),], pval_corrVL_cART_initiation[nrow(pval_corrVL_cART_initiation),])
+
+df_VL_cART_initiation$Name <- c(rownames(df_VL_cART_initiation))
+df_VL_cART_initiation$class <- "VL_cART_initiation"
+colnames(df_VL_cART_initiation) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of VL_cART_initiation with VL_cART_initiation, only correlations of CpG with VL_cART_initiation now
+df_VL_cART_initiation <- df_VL_cART_initiation[-nrow(df_VL_cART_initiation),]
+df_VL_cART_initiation$qvalue <- p.adjust(df_VL_cART_initiation$pval, method = "fdr")
+df_VL_cART_initiation <- df_VL_cART_initiation[order(abs(df_VL_cART_initiation$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.HIV_VL_cART_initiation[,"cg24004745_IL1RAP"]), as.numeric(cl_params5.w6$VL_cART_initiation), method = "spearman") # R-0.231  p = 0.47
+
+
+# Bind to Data 3 the values of HIV_tocART
+Data.HIV_HIV_tocART <- cbind(Data.HIV, cl_params5.w6$HIV_tocART)
+rownames(Data.HIV_HIV_tocART)
+colnames(Data.HIV_HIV_tocART) <- c(colnames(Data.HIV), "HIV_tocART")
+id2 <- colnames(Data.HIV_HIV_tocART)
+Data.HIV_HIV_tocART <- apply(Data.HIV_HIV_tocART, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with HIV_tocART
+library(Hmisc)
+res_corrHIV_tocART <- rcorr(Data.HIV_HIV_tocART,type="spearman") #Correlation between columns
+mat_corrHIV_tocART <- res_corrHIV_tocART$r
+pval_corrHIV_tocART <- res_corrHIV_tocART$P
+
+#Select all the correlations with HIV_tocART
+df_HIV_tocART <- data.frame(mat_corrHIV_tocART[nrow(mat_corrHIV_tocART),], pval_corrHIV_tocART[nrow(pval_corrHIV_tocART),])
+
+df_HIV_tocART$Name <- c(rownames(df_HIV_tocART))
+df_HIV_tocART$class <- "HIV_tocART"
+colnames(df_HIV_tocART) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of HIV_tocART with HIV_tocART, only correlations of CpG with HIV_tocART now
+df_HIV_tocART <- df_HIV_tocART[-nrow(df_HIV_tocART),]
+df_HIV_tocART$qvalue <- p.adjust(df_HIV_tocART$pval, method = "fdr")
+df_HIV_tocART <- df_HIV_tocART[order(abs(df_HIV_tocART$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+#Validate
+cor.test(as.numeric(Data.HIV_HIV_tocART[,"cg24004745_IL1RAP"]), as.numeric(cl_params5.w6$HIV_tocART), method = "spearman") # R= 0.13  p = 0.68
+
+
+# Bind to Data 3 the values of UD_MAP
+Data.HIV_UD_MAP <- cbind(Data.HIV, cl_params5.w6$UD_MAP)
+rownames(Data.HIV_UD_MAP)
+colnames(Data.HIV_UD_MAP) <- c(colnames(Data.HIV), "UD_MAP")
+id2 <- colnames(Data.HIV_UD_MAP)
+Data.HIV_UD_MAP <- apply(Data.HIV_UD_MAP, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with UD_MAP
+library(Hmisc)
+res_corrUD_MAP <- rcorr(Data.HIV_UD_MAP,type="spearman") #Correlation between columns
+mat_corrUD_MAP <- res_corrUD_MAP$r
+pval_corrUD_MAP <- res_corrUD_MAP$P
+
+#Select all the correlations with UD_MAP
+df_UD_MAP <- data.frame(mat_corrUD_MAP[nrow(mat_corrUD_MAP),], pval_corrUD_MAP[nrow(pval_corrUD_MAP),])
+
+df_UD_MAP$Name <- c(rownames(df_UD_MAP))
+df_UD_MAP$class <- "UD_MAP"
+colnames(df_UD_MAP) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of UD_MAP with UD_MAP, only correlations of CpG with UD_MAP now
+df_UD_MAP <- df_UD_MAP[-nrow(df_UD_MAP),]
+df_UD_MAP$qvalue <- p.adjust(df_UD_MAP$pval, method = "fdr")
+df_UD_MAP <- df_UD_MAP[order(abs(df_UD_MAP$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+#Validate
+cor.test(as.numeric(Data.HIV_UD_MAP[,"cg24004745_IL1RAP"]), as.numeric(cl_params5.w6$UD_MAP), method = "spearman") # R= 0.465  p = 0.127
+
+
+library(dplyr)
+df_HIV <- bind_rows(list(df_Proviral, df_SCA, df_CA_RNA, df_H3Ac,df_Magnitude_HIVconsv,df_Breadth_HIVconsv, df_Magnitude_HIVtotal, df_Breadth_HIVtotal, df_VL_MAP, df_time_MAP, df_Time_on_cART_BCN02, df_VL_cART_initiation, df_HIV_tocART, df_UD_MAP))
+
+df_HIV$module <- "HIV"
+
+write.table(df_HIV, file = "../HeatmapMeth/df_HIV_new.txt", sep = "\t")
+
+```
+
+```{r}
+Rebound2 <- rownames(mat.HIV2)
+Late <- grep("A02|A05|A09|B13", Rebound2)
+Rebound2[Late] <- "Late"
+Rebound2[-Late] <- "Early"
+
+Rebound.col <- rownames(mat.HIV2)
+Rebound.col[Late] <- "orange"
+Rebound.col[-Late] <- "blue"
+
+df_SCA.HIV <- df_SCA[colnames(mat.HIV2),]
+RhoSCA.HIV <- df_SCA.HIV$Rho
+
+df_Proviral.HIV <- df_Proviral[colnames(mat.HIV2),]
+RhoProviral.HIV <- df_Proviral.HIV$Rho
+
+df_CA_RNA.HIV <- df_CA_RNA[colnames(mat.HIV2),]
+RhoCA_RNA.HIV <- df_CA_RNA.HIV$Rho
+
+df_H3Ac.HIV <- df_H3Ac[colnames(mat.HIV2),]
+RhoH3Ac.HIV <- df_H3Ac.HIV$Rho
+
+
+df_Magnitude.HIV <- df_Magnitude_HIVconsv[colnames(mat.HIV2),]
+RhoMagnitude.HIV <- df_Magnitude.HIV$Rho
+
+df_Breadth.HIV <- df_Breadth_HIVconsv[colnames(mat.HIV2),]
+RhoBreadth.HIV <- df_Breadth.HIV$Rho
+
+
+df_MagnitudeHIVtotal.HIV <- df_Magnitude_HIVtotal[colnames(mat.HIV2),]
+RhoMagnitudeHIVtotal.HIV <- df_MagnitudeHIVtotal.HIV$Rho
+
+df_BreadthHIVtotal.HIV <- df_Breadth_HIVtotal[colnames(mat.HIV2),]
+RhoBreadthHIVtotal.HIV <- df_BreadthHIVtotal.HIV$Rho
+
+
+df_VL_MAP.HIV <- df_VL_MAP[colnames(mat.HIV2),]
+RhoVL_MAP.HIV <- df_VL_MAP.HIV$Rho
+
+df_time_MAP.HIV <- df_time_MAP[colnames(mat.HIV2),]
+Rhotime_MAP.HIV <- df_time_MAP.HIV$Rho
+
+df_Time_on_cART_BCN02.HIV <- df_Time_on_cART_BCN02[colnames(mat.HIV2),]
+RhoTime_on_cART_BCN02.HIV <- df_Time_on_cART_BCN02.HIV$Rho
+
+df_VL_cART_initiation.HIV <- df_VL_cART_initiation[colnames(mat.HIV2),]
+RhoVL_cART_initiation.HIV <- df_VL_cART_initiation.HIV$Rho
+
+df_HIV_tocART.HIV <- df_HIV_tocART[colnames(mat.HIV2),]
+RhoHIV_tocART.HIV <- df_HIV_tocART.HIV$Rho
+
+df_UD_MAP.HIV <- df_UD_MAP[colnames(mat.HIV2),]
+RhoUD_MAP.HIV <- df_UD_MAP.HIV$Rho
+
+
+column_ha = HeatmapAnnotation(Rebound = Rebound2, col = list(Rebound = c("Late" = "orange", "Early" = "blue")))
+
+col_fun = colorRamp2(c(-1, 0, 1), c("red", "white", "blue")) #Viral
+col_fun2 = colorRamp2(c(-1, 0, 1), c("pink", "white", "purple")) #ELISPOTdata
+col_fun3 = colorRamp2(c(-1, 0, 1), c("orange", "white", "brown")) #MAP data
+col_fun4 = colorRamp2(c(-1, 0, 1), c("grey", "white", "darkblue")) #BCN02 entry data
+
+
+
+
+row_ha.HIV = rowAnnotation(Proviral = RhoProviral.HIV, SCA = RhoSCA.HIV, CA_RNA = RhoCA_RNA.HIV, H3Ac = RhoH3Ac.HIV, Magnitude = RhoMagnitude.HIV, Breadth = RhoBreadth.HIV, Magnitude_HIVtotal = RhoMagnitudeHIVtotal.HIV, Breadth_HIVtotal = RhoBreadthHIVtotal.HIV, VL_MAP = RhoVL_MAP.HIV, time = Rhotime_MAP.HIV, time_cART_BCN02_entry = RhoTime_on_cART_BCN02.HIV, VL_cART_initiation = RhoVL_cART_initiation.HIV, HIV_tocART = RhoHIV_tocART.HIV, UD_MAP = RhoUD_MAP.HIV, col = list(Proviral = col_fun, SCA = col_fun, CA_RNA = col_fun, H3Ac = col_fun,Magnitude = col_fun2, Breadth = col_fun2,Magnitude_HIVtotal = col_fun2, Breadth_HIVtotal = col_fun2, VL_MAP =col_fun4, time = col_fun4, time_cART_BCN02_entry = col_fun3, VL_cART_initiation = col_fun3, HIV_tocART =col_fun3, UD_MAP = col_fun3))
+
+#pdf("../HeatmapMeth/HIV_Corrparams_new.pdf", height = 25, width = 15)
+Heatmap(t(mat.HIV2), show_column_dend = FALSE,cluster_columns = FALSE,  col = colorRamp2(c(-2,2), c( c("red", "yellow"))),row_names_gp = gpar(fontsize = 7), height = unit(2.5, "mm")*nrow(t(mat.HIV2)), top_annotation = column_ha, right_annotation = row_ha.HIV)
+#dev.off()
+
+```
+
+
+
+#Immune Signature
+```{r}
+#Genes in module immunity
+Immune <- unique(c(Genes_in_Module$Immunity))
+Immune.df <- data.frame(Immune)
+length(Immune)# 2174
+
+library(gprofiler2)
+Immuneconvert <- gconvert(query = as.character(Immune) , organism = "hsapiens",
+         target="UCSC", mthreshold = Inf, filter_na = TRUE)
+
+Immune.genes <- unique(c(Immuneconvert$input, Immuneconvert$name))
+
+
+#Genes associated with Immune response
+EvsLw6.Immune <- subset(Genes_EvsLw6.ok, Genes_EvsLw6.ok$Gene %in% Immune.genes) #1738
+length(unique(EvsLw6.Immune$Gene))#33
+
+```
+
+
+```{r}
+
+#Read DNAmet at w6
+CpGs_Immune <-paste0("^", as.character(EvsLw6.Immune$Row.names))
+CpGs_Immune_ok <-paste0(CpGs_Immune, collapse = "|")
+
+DNAMethyl1.Immune <- DNAMethyl1[grep(CpGs_Immune_ok, rownames(DNAMethyl1)), ]
+
+
+ann450.Immune <- ann450[rownames(DNAMethyl1.Immune),]
+df.Immune <- data.frame(rownames(ann450.Immune), rownames(DNAMethyl1.Immune))
+rownames(DNAMethyl1.Immune) <- ann450.Immune$CpG_Gene
+
+mat.Immune <- as.matrix(DNAMethyl1.Immune)
+colnames(mat.Immune) <- gsub(".w6", "" ,colnames(mat.Immune))
+mat.Immune <- mat.Immune[, c("B13", "A02", "A05", "A09", "A04", "B14", "B10", "B06", "A15", "A13", "A12", "B05")]
+
+Rebound2 <- colnames(mat.Immune )
+Late <- grep("A02|A05|A09|B13", Rebound2)
+Rebound2[Late] <- "orange"
+Rebound2[-Late] <- "blue"
+
+#Z-scoore
+mat.Immune2 <- scale(t(mat.Immune))
+
+Heatmap(t(mat.Immune2), show_column_dend = TRUE,  col = colorRamp2(c(-2,2), c( c("red", "yellow"))))
+
+
+```
+
+
+#Correlations of Immune Genes. 
+
+```{r}
+
+cl_params <- read.csv("../../BCN02-INFO/ClincalandImmuneinfow6_viral.csv", header = TRUE, stringsAsFactors = FALSE)
+cl_params.w6 <- cl_params[,c(1, grep("w6", colnames(cl_params)))]
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params.w6) <- cl_params.w6$X
+colnames(cl_params.w6) <- c("patient", "Proviral", "SCA", "CA_RNA", "H3Ac")
+cl_params.w6 <- cl_params.w6[grep(paste0(colnames(mat.Immune), collapse = "|"), rownames(cl_params.w6)),]
+cl_params.w6 <- cl_params.w6[colnames(mat.Immune),]
+
+names.order <- data.frame(cl_params.w6$patient, colnames(mat.Immune))
+
+
+# Transpose beta values for selected cg --> Patients in rows now and cg probes in columns
+# there's no longer the name of the cg
+Data.Immune <- t(mat.Immune)
+Data.Immune[1:10, 1:10]
+dim(Data.Immune)
+
+# Bind to Data 3 the values of Proviral
+Data.Immune_Proviral <- cbind(Data.Immune, cl_params.w6$Proviral)
+rownames(Data.Immune_Proviral)
+colnames(Data.Immune_Proviral) <- c(colnames(Data.Immune), "Proviral")
+id2 <- colnames(Data.Immune_Proviral)
+Data.Immune_Proviral <- apply(Data.Immune_Proviral, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Proviral
+library(Hmisc)
+res_corrProviral <- rcorr(Data.Immune_Proviral,type="spearman") #Correlation between columns
+mat_corrProviral <- res_corrProviral$r
+pval_corrProviral <- res_corrProviral$P
+
+#Select all the correlations with Proviral
+df_Proviral <- data.frame(mat_corrProviral[nrow(mat_corrProviral),], pval_corrProviral[nrow(pval_corrProviral),])
+
+df_Proviral$Name <- c(rownames(df_Proviral))
+df_Proviral$class <- "Proviral"
+colnames(df_Proviral) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Proviral with Proviral, only correlations of CpG with Proviral now
+df_Proviral <- df_Proviral[-nrow(df_Proviral),]
+df_Proviral$qvalue <- p.adjust(df_Proviral$pval, method = "fdr")
+df_Proviral <- df_Proviral[order(abs(df_Proviral$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.Immune_Proviral[,"cg24004745_IL1RAP"]), as.numeric(cl_params.w6$Proviral), method = "spearman") # R-0.3852896  p = 0.21
+
+
+#SCA - Ultrasensitive viral load 
+Data.Immune_SCA <- cbind(Data.Immune, cl_params.w6$SCA)
+rownames(Data.Immune_SCA)
+id2 <- colnames(Data.Immune_SCA)
+Data.Immune_SCA <- apply(Data.Immune_SCA, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with SCA
+library(Hmisc)
+res_corrSCA <- rcorr(Data.Immune_SCA,type="spearman") #Correlation between columns
+mat_corrSCA <- res_corrSCA$r
+pval_corrSCA <- res_corrSCA$P
+
+#Select all the correlations with SCA
+df_SCA <- data.frame(mat_corrSCA[nrow(mat_corrSCA),], pval_corrSCA[nrow(pval_corrSCA),])
+
+df_SCA$Name <- c(rownames(df_SCA))
+df_SCA$class <- "SCA"
+colnames(df_SCA) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of SCA with SCA, only correlations of CpG with SCA now
+df_SCA <- df_SCA[-nrow(df_SCA),]
+df_SCA$qvalue <- p.adjust(df_SCA$pval, method = "fdr")
+df_SCA <- df_SCA[order(abs(df_SCA$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.Immune_SCA[,"cg24004745_IL1RAP"]), as.numeric(cl_params.w6$SCA), method = "spearman") # R-0.35  p = 0.25
+
+#CA-RNA
+Data.Immune_CA_RNA <- cbind(Data.Immune, cl_params.w6$CA_RNA)
+rownames(Data.Immune_CA_RNA)
+id2 <- colnames(Data.Immune_CA_RNA)
+Data.Immune_CA_RNA <- apply(Data.Immune_CA_RNA, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with CA_RNA
+library(Hmisc)
+res_corrCA_RNA <- rcorr(Data.Immune_CA_RNA,type="spearman") #Correlation between columns
+mat_corrCA_RNA <- res_corrCA_RNA$r
+pval_corrCA_RNA <- res_corrCA_RNA$P
+
+#Select all the correlations with CA_RNA
+df_CA_RNA <- data.frame(mat_corrCA_RNA[nrow(mat_corrCA_RNA),], pval_corrCA_RNA[nrow(pval_corrCA_RNA),])
+
+df_CA_RNA$Name <- c(rownames(df_CA_RNA))
+df_CA_RNA$class <- "CA_RNA"
+colnames(df_CA_RNA) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of CA_RNA with CA_RNA, only correlations of CpG with CA_RNA now
+df_CA_RNA <- df_CA_RNA[-nrow(df_CA_RNA),]
+df_CA_RNA$qvalue <- p.adjust(df_CA_RNA$pval, method = "fdr")
+df_CA_RNA <- df_CA_RNA[order(abs(df_CA_RNA$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.Immune_CA_RNA[,"cg24004745_IL1RAP"]), as.numeric(cl_params.w6$CA_RNA), method = "spearman") # R-0.63  p = 0.02
+
+#H3Ac
+Data.Immune_H3Ac <- cbind(Data.Immune, cl_params.w6$H3Ac)
+rownames(Data.Immune_H3Ac)
+id2 <- colnames(Data.Immune_H3Ac)
+Data.Immune_H3Ac <- apply(Data.Immune_H3Ac, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with H3Ac
+library(Hmisc)
+res_corrH3Ac <- rcorr(Data.Immune_H3Ac,type="spearman") #Correlation between columns
+mat_corrH3Ac <- res_corrH3Ac$r
+pval_corrH3Ac <- res_corrH3Ac$P
+
+#Select all the correlations with H3Ac
+df_H3Ac <- data.frame(mat_corrH3Ac[nrow(mat_corrH3Ac),], pval_corrH3Ac[nrow(pval_corrH3Ac),])
+
+df_H3Ac$Name <- c(rownames(df_H3Ac))
+df_H3Ac$class <- "H3Ac"
+colnames(df_H3Ac) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of H3Ac with H3Ac, only correlations of CpG with H3Ac now
+df_H3Ac <- df_H3Ac[-nrow(df_H3Ac),]
+df_H3Ac$qvalue <- p.adjust(df_H3Ac$pval, method = "fdr")
+df_H3Ac <- df_H3Ac[order(abs(df_H3Ac$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.Immune_H3Ac[,"cg24004745_IL1RAP"]), as.numeric(cl_params.w6$H3Ac), method = "spearman") # R = 0.26  p = 0.40
+
+
+#ELISPOT Data
+
+cl_params3.w6 <- read.csv("../../BCN02-INFO/ELISPOT._datacsv.csv", header = TRUE, stringsAsFactors = FALSE)
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params3.w6) <- cl_params3.w6$X
+colnames(cl_params3.w6) <- c("patient", "Magnitude_HIVconsv","Breadth_HIVconsv",
+                             "Magnitude_HIVtotal","Breadth_HIVtotal"  )
+cl_params3.w6 <- cl_params3.w6[grep(paste0(colnames(mat.Immune), collapse = "|"), rownames(cl_params3.w6)),]
+cl_params3.w6 <- cl_params3.w6[colnames(mat.Immune),]
+
+names.order <- data.frame(cl_params3.w6$patient, colnames(mat.Immune))
+
+
+# Bind to Data 3 the values of Magnitude_HIVconsv
+Data.Immune_Magnitude_HIVconsv <- cbind(Data.Immune, cl_params3.w6$Magnitude_HIVconsv)
+rownames(Data.Immune_Magnitude_HIVconsv)
+colnames(Data.Immune_Magnitude_HIVconsv) <- c(colnames(Data.Immune), "Magnitude_HIVconsv")
+id2 <- colnames(Data.Immune_Magnitude_HIVconsv)
+Data.Immune_Magnitude_HIVconsv <- apply(Data.Immune_Magnitude_HIVconsv, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Magnitude_HIVconsv
+library(Hmisc)
+res_corrMagnitude_HIVconsv <- rcorr(Data.Immune_Magnitude_HIVconsv,type="spearman") #Correlation between columns
+mat_corrMagnitude_HIVconsv <- res_corrMagnitude_HIVconsv$r
+pval_corrMagnitude_HIVconsv <- res_corrMagnitude_HIVconsv$P
+
+#Select all the correlations with Magnitude_HIVconsv
+df_Magnitude_HIVconsv <- data.frame(mat_corrMagnitude_HIVconsv[nrow(mat_corrMagnitude_HIVconsv),], pval_corrMagnitude_HIVconsv[nrow(pval_corrMagnitude_HIVconsv),])
+
+df_Magnitude_HIVconsv$Name <- c(rownames(df_Magnitude_HIVconsv))
+df_Magnitude_HIVconsv$class <- "Magnitude_HIVconsv"
+colnames(df_Magnitude_HIVconsv) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Magnitude_HIVconsv with Magnitude_HIVconsv, only correlations of CpG with Magnitude_HIVconsv now
+df_Magnitude_HIVconsv <- df_Magnitude_HIVconsv[-nrow(df_Magnitude_HIVconsv),]
+df_Magnitude_HIVconsv$qvalue <- p.adjust(df_Magnitude_HIVconsv$pval, method = "fdr")
+df_Magnitude_HIVconsv <- df_Magnitude_HIVconsv[order(abs(df_Magnitude_HIVconsv$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.Immune_Magnitude_HIVconsv[,"cg24004745_IL1RAP"]), as.numeric(cl_params3.w6$Magnitude_HIVconsv), method = "spearman") # R-0.468  p = 0.12
+
+
+
+# Bind to Data 3 the values of Breadth_HIVconsv
+Data.Immune_Breadth_HIVconsv <- cbind(Data.Immune, cl_params3.w6$Breadth_HIVconsv)
+rownames(Data.Immune_Breadth_HIVconsv)
+colnames(Data.Immune_Breadth_HIVconsv) <- c(colnames(Data.Immune), "Breadth_HIVconsv")
+id2 <- colnames(Data.Immune_Breadth_HIVconsv)
+Data.Immune_Breadth_HIVconsv <- apply(Data.Immune_Breadth_HIVconsv, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Breadth_HIVconsv
+library(Hmisc)
+res_corrBreadth_HIVconsv <- rcorr(Data.Immune_Breadth_HIVconsv,type="spearman") #Correlation between columns
+mat_corrBreadth_HIVconsv <- res_corrBreadth_HIVconsv$r
+pval_corrBreadth_HIVconsv <- res_corrBreadth_HIVconsv$P
+
+#Select all the correlations with Breadth_HIVconsv
+df_Breadth_HIVconsv <- data.frame(mat_corrBreadth_HIVconsv[nrow(mat_corrBreadth_HIVconsv),], pval_corrBreadth_HIVconsv[nrow(pval_corrBreadth_HIVconsv),])
+
+df_Breadth_HIVconsv$Name <- c(rownames(df_Breadth_HIVconsv))
+df_Breadth_HIVconsv$class <- "Breadth_HIVconsv"
+colnames(df_Breadth_HIVconsv) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Breadth_HIVconsv with Breadth_HIVconsv, only correlations of CpG with Breadth_HIVconsv now
+df_Breadth_HIVconsv <- df_Breadth_HIVconsv[-nrow(df_Breadth_HIVconsv),]
+df_Breadth_HIVconsv$qvalue <- p.adjust(df_Breadth_HIVconsv$pval, method = "fdr")
+df_Breadth_HIVconsv <- df_Breadth_HIVconsv[order(abs(df_Breadth_HIVconsv$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.Immune_Breadth_HIVconsv[,"cg24004745_IL1RAP"]), as.numeric(cl_params3.w6$Breadth_HIVconsv), method = "spearman") # R-0.3852896  p = 0.21
+
+
+# Bind to Data 3 the values of Magnitude_HIVtotal
+Data.Immune_Magnitude_HIVtotal <- cbind(Data.Immune, cl_params3.w6$Magnitude_HIVtotal)
+rownames(Data.Immune_Magnitude_HIVtotal)
+colnames(Data.Immune_Magnitude_HIVtotal) <- c(colnames(Data.Immune), "Magnitude_HIVtotal")
+id2 <- colnames(Data.Immune_Magnitude_HIVtotal)
+Data.Immune_Magnitude_HIVtotal <- apply(Data.Immune_Magnitude_HIVtotal, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Magnitude_HIVtotal
+library(Hmisc)
+res_corrMagnitude_HIVtotal <- rcorr(Data.Immune_Magnitude_HIVtotal,type="spearman") #Correlation between columns
+mat_corrMagnitude_HIVtotal <- res_corrMagnitude_HIVtotal$r
+pval_corrMagnitude_HIVtotal <- res_corrMagnitude_HIVtotal$P
+
+#Select all the correlations with Magnitude_HIVtotal
+df_Magnitude_HIVtotal <- data.frame(mat_corrMagnitude_HIVtotal[nrow(mat_corrMagnitude_HIVtotal),], pval_corrMagnitude_HIVtotal[nrow(pval_corrMagnitude_HIVtotal),])
+
+df_Magnitude_HIVtotal$Name <- c(rownames(df_Magnitude_HIVtotal))
+df_Magnitude_HIVtotal$class <- "Magnitude_HIVtotal"
+colnames(df_Magnitude_HIVtotal) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Magnitude_HIVtotal with Magnitude_HIVtotal, only correlations of CpG with Magnitude_HIVtotal now
+df_Magnitude_HIVtotal <- df_Magnitude_HIVtotal[-nrow(df_Magnitude_HIVtotal),]
+df_Magnitude_HIVtotal$qvalue <- p.adjust(df_Magnitude_HIVtotal$pval, method = "fdr")
+df_Magnitude_HIVtotal <- df_Magnitude_HIVtotal[order(abs(df_Magnitude_HIVtotal$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.Immune_Magnitude_HIVtotal[,"cg24004745_IL1RAP"]), as.numeric(cl_params3.w6$Magnitude_HIVtotal), method = "spearman") # R-0.3852896  p = 0.21
+
+
+# Bind to Data 3 the values of Breadth_HIVtotal
+Data.Immune_Breadth_HIVtotal <- cbind(Data.Immune, cl_params3.w6$Breadth_HIVtotal)
+rownames(Data.Immune_Breadth_HIVtotal)
+colnames(Data.Immune_Breadth_HIVtotal) <- c(colnames(Data.Immune), "Breadth_HIVtotal")
+id2 <- colnames(Data.Immune_Breadth_HIVtotal)
+Data.Immune_Breadth_HIVtotal <- apply(Data.Immune_Breadth_HIVtotal, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Breadth_HIVtotal
+library(Hmisc)
+res_corrBreadth_HIVtotal <- rcorr(Data.Immune_Breadth_HIVtotal,type="spearman") #Correlation between columns
+mat_corrBreadth_HIVtotal <- res_corrBreadth_HIVtotal$r
+pval_corrBreadth_HIVtotal <- res_corrBreadth_HIVtotal$P
+
+#Select all the correlations with Breadth_HIVtotal
+df_Breadth_HIVtotal <- data.frame(mat_corrBreadth_HIVtotal[nrow(mat_corrBreadth_HIVtotal),], pval_corrBreadth_HIVtotal[nrow(pval_corrBreadth_HIVtotal),])
+
+df_Breadth_HIVtotal$Name <- c(rownames(df_Breadth_HIVtotal))
+df_Breadth_HIVtotal$class <- "Breadth_HIVtotal"
+colnames(df_Breadth_HIVtotal) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Breadth_HIVtotal with Breadth_HIVtotal, only correlations of CpG with Breadth_HIVtotal now
+df_Breadth_HIVtotal <- df_Breadth_HIVtotal[-nrow(df_Breadth_HIVtotal),]
+df_Breadth_HIVtotal$qvalue <- p.adjust(df_Breadth_HIVtotal$pval, method = "fdr")
+df_Breadth_HIVtotal <- df_Breadth_HIVtotal[order(abs(df_Breadth_HIVtotal$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.Immune_Breadth_HIVtotal[,"cg24004745_IL1RAP"]), as.numeric(cl_params3.w6$Breadth_HIVtotal), method = "spearman") # R-0.3852896  p = 0.21
+
+
+#Data VL at day of cART ressumption and time to rebound. 
+
+cl_params4.w6 <- read.csv("../../BCN02-INFO/MAP_outcome.csv", header = TRUE, stringsAsFactors = FALSE)
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params4.w6) <- cl_params4.w6$PatientID
+colnames(cl_params4.w6) <- c("patient", "VL_MAP","time_MAP"  )
+cl_params4.w6 <- cl_params4.w6[grep(paste0(colnames(mat.Immune), collapse = "|"), rownames(cl_params4.w6)),]
+cl_params4.w6 <- cl_params4.w6[colnames(mat.Immune),]
+
+names.order <- data.frame(cl_params4.w6$patient, colnames(mat.Immune))
+
+
+# Bind to Data 3 the values of VL_MAP
+Data.Immune_VL_MAP <- cbind(Data.Immune, cl_params4.w6$VL_MAP)
+rownames(Data.Immune_VL_MAP)
+colnames(Data.Immune_VL_MAP) <- c(colnames(Data.Immune), "VL_MAP")
+id2 <- colnames(Data.Immune_VL_MAP)
+Data.Immune_VL_MAP <- apply(Data.Immune_VL_MAP, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with VL_MAP
+library(Hmisc)
+res_corrVL_MAP <- rcorr(Data.Immune_VL_MAP,type="spearman") #Correlation between columns
+mat_corrVL_MAP <- res_corrVL_MAP$r
+pval_corrVL_MAP <- res_corrVL_MAP$P
+
+#Select all the correlations with VL_MAP
+df_VL_MAP <- data.frame(mat_corrVL_MAP[nrow(mat_corrVL_MAP),], pval_corrVL_MAP[nrow(pval_corrVL_MAP),])
+
+df_VL_MAP$Name <- c(rownames(df_VL_MAP))
+df_VL_MAP$class <- "VL_MAP"
+colnames(df_VL_MAP) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of VL_MAP with VL_MAP, only correlations of CpG with VL_MAP now
+df_VL_MAP <- df_VL_MAP[-nrow(df_VL_MAP),]
+df_VL_MAP$qvalue <- p.adjust(df_VL_MAP$pval, method = "fdr")
+df_VL_MAP <- df_VL_MAP[order(abs(df_VL_MAP$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.Immune_VL_MAP[,"cg24004745_IL1RAP"]), as.numeric(cl_params4.w6$VL_MAP), method = "spearman") # R-0.238  p = 0.45
+
+
+
+# Bind to Data 3 the values of time_MAP
+Data.Immune_time_MAP <- cbind(Data.Immune, cl_params4.w6$time_MAP)
+rownames(Data.Immune_time_MAP)
+colnames(Data.Immune_time_MAP) <- c(colnames(Data.Immune), "time_MAP")
+id2 <- colnames(Data.Immune_time_MAP)
+Data.Immune_time_MAP <- apply(Data.Immune_time_MAP, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with time_MAP
+library(Hmisc)
+res_corrtime_MAP <- rcorr(Data.Immune_time_MAP,type="spearman") #Correlation between columns
+mat_corrtime_MAP <- res_corrtime_MAP$r
+pval_corrtime_MAP <- res_corrtime_MAP$P
+
+#Select all the correlations with time_MAP
+df_time_MAP <- data.frame(mat_corrtime_MAP[nrow(mat_corrtime_MAP),], pval_corrtime_MAP[nrow(pval_corrtime_MAP),])
+
+df_time_MAP$Name <- c(rownames(df_time_MAP))
+df_time_MAP$class <- "time_MAP"
+colnames(df_time_MAP) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of time_MAP with time_MAP, only correlations of CpG with time_MAP now
+df_time_MAP <- df_time_MAP[-nrow(df_time_MAP),]
+df_time_MAP$qvalue <- p.adjust(df_time_MAP$pval, method = "fdr")
+df_time_MAP <- df_time_MAP[order(abs(df_time_MAP$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.Immune_time_MAP[,"cg24004745_IL1RAP"]), as.numeric(cl_params4.w6$time_MAP), method = "spearman") # R= 0.38  p = 0.22
+
+
+
+
+cl_params5.w6 <- read.csv("../../BCN02-INFO/preCART_info.csv", header = TRUE, stringsAsFactors = FALSE)
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params5.w6) <- cl_params5.w6$PatientID
+colnames(cl_params5.w6) <- c("patient", "Time_on_cART_BCN02", "VL_cART_initiation", "HIV_tocART", "UD_MAP" )
+cl_params5.w6 <- cl_params5.w6[grep(paste0(colnames(mat.Immune), collapse = "|"), rownames(cl_params5.w6)),]
+cl_params5.w6 <- cl_params5.w6[colnames(mat.Immune),]
+
+names.order <- data.frame(cl_params5.w6$patient, colnames(mat.Immune))
+
+
+# Bind to Data 3 the values of Time_on_cART_BCN02
+Data.Immune_Time_on_cART_BCN02 <- cbind(Data.Immune, cl_params5.w6$Time_on_cART_BCN02)
+rownames(Data.Immune_Time_on_cART_BCN02)
+colnames(Data.Immune_Time_on_cART_BCN02) <- c(colnames(Data.Immune), "Time_on_cART_BCN02")
+id2 <- colnames(Data.Immune_Time_on_cART_BCN02)
+Data.Immune_Time_on_cART_BCN02 <- apply(Data.Immune_Time_on_cART_BCN02, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Time_on_cART_BCN02
+library(Hmisc)
+res_corrTime_on_cART_BCN02 <- rcorr(Data.Immune_Time_on_cART_BCN02,type="spearman") #Correlation between columns
+mat_corrTime_on_cART_BCN02 <- res_corrTime_on_cART_BCN02$r
+pval_corrTime_on_cART_BCN02 <- res_corrTime_on_cART_BCN02$P
+
+#Select all the correlations with Time_on_cART_BCN02
+df_Time_on_cART_BCN02 <- data.frame(mat_corrTime_on_cART_BCN02[nrow(mat_corrTime_on_cART_BCN02),], pval_corrTime_on_cART_BCN02[nrow(pval_corrTime_on_cART_BCN02),])
+
+df_Time_on_cART_BCN02$Name <- c(rownames(df_Time_on_cART_BCN02))
+df_Time_on_cART_BCN02$class <- "Time_on_cART_BCN02"
+colnames(df_Time_on_cART_BCN02) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Time_on_cART_BCN02 with Time_on_cART_BCN02, only correlations of CpG with Time_on_cART_BCN02 now
+df_Time_on_cART_BCN02 <- df_Time_on_cART_BCN02[-nrow(df_Time_on_cART_BCN02),]
+df_Time_on_cART_BCN02$qvalue <- p.adjust(df_Time_on_cART_BCN02$pval, method = "fdr")
+df_Time_on_cART_BCN02 <- df_Time_on_cART_BCN02[order(abs(df_Time_on_cART_BCN02$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.Immune_Time_on_cART_BCN02[,"cg24004745_IL1RAP"]), as.numeric(cl_params5.w6$Time_on_cART_BCN02), method = "spearman") # R = 0.27p = 0.27
+
+
+
+# Bind to Data 3 the values of VL_cART_initiation
+Data.Immune_VL_cART_initiation <- cbind(Data.Immune, cl_params5.w6$VL_cART_initiation)
+rownames(Data.Immune_VL_cART_initiation)
+colnames(Data.Immune_VL_cART_initiation) <- c(colnames(Data.Immune), "VL_cART_initiation")
+id2 <- colnames(Data.Immune_VL_cART_initiation)
+Data.Immune_VL_cART_initiation <- apply(Data.Immune_VL_cART_initiation, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with VL_cART_initiation
+library(Hmisc)
+res_corrVL_cART_initiation <- rcorr(Data.Immune_VL_cART_initiation,type="spearman") #Correlation between columns
+mat_corrVL_cART_initiation <- res_corrVL_cART_initiation$r
+pval_corrVL_cART_initiation <- res_corrVL_cART_initiation$P
+
+#Select all the correlations with VL_cART_initiation
+df_VL_cART_initiation <- data.frame(mat_corrVL_cART_initiation[nrow(mat_corrVL_cART_initiation),], pval_corrVL_cART_initiation[nrow(pval_corrVL_cART_initiation),])
+
+df_VL_cART_initiation$Name <- c(rownames(df_VL_cART_initiation))
+df_VL_cART_initiation$class <- "VL_cART_initiation"
+colnames(df_VL_cART_initiation) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of VL_cART_initiation with VL_cART_initiation, only correlations of CpG with VL_cART_initiation now
+df_VL_cART_initiation <- df_VL_cART_initiation[-nrow(df_VL_cART_initiation),]
+df_VL_cART_initiation$qvalue <- p.adjust(df_VL_cART_initiation$pval, method = "fdr")
+df_VL_cART_initiation <- df_VL_cART_initiation[order(abs(df_VL_cART_initiation$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.Immune_VL_cART_initiation[,"cg24004745_IL1RAP"]), as.numeric(cl_params5.w6$VL_cART_initiation), method = "spearman") # R-0.23  p = 0.47
+
+
+
+# Bind to Data 3 the values of HIV_tocART
+Data.Immune_HIV_tocART <- cbind(Data.Immune, cl_params5.w6$HIV_tocART)
+rownames(Data.Immune_HIV_tocART)
+colnames(Data.Immune_HIV_tocART) <- c(colnames(Data.Immune), "HIV_tocART")
+id2 <- colnames(Data.Immune_HIV_tocART)
+Data.Immune_HIV_tocART <- apply(Data.Immune_HIV_tocART, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with HIV_tocART
+library(Hmisc)
+res_corrHIV_tocART <- rcorr(Data.Immune_HIV_tocART,type="spearman") #Correlation between columns
+mat_corrHIV_tocART <- res_corrHIV_tocART$r
+pval_corrHIV_tocART <- res_corrHIV_tocART$P
+
+#Select all the correlations with HIV_tocART
+df_HIV_tocART <- data.frame(mat_corrHIV_tocART[nrow(mat_corrHIV_tocART),], pval_corrHIV_tocART[nrow(pval_corrHIV_tocART),])
+
+df_HIV_tocART$Name <- c(rownames(df_HIV_tocART))
+df_HIV_tocART$class <- "HIV_tocART"
+colnames(df_HIV_tocART) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of HIV_tocART with HIV_tocART, only correlations of CpG with HIV_tocART now
+df_HIV_tocART <- df_HIV_tocART[-nrow(df_HIV_tocART),]
+df_HIV_tocART$qvalue <- p.adjust(df_HIV_tocART$pval, method = "fdr")
+df_HIV_tocART <- df_HIV_tocART[order(abs(df_HIV_tocART$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.Immune_HIV_tocART[,"cg24004745_IL1RAP"]), as.numeric(cl_params5.w6$HIV_tocART), method = "spearman") # R 0.13  p = 0.68
+cor.test(as.numeric(mat.Immune["cg15416179_MAP2K3",]), as.numeric(cl_params5.w6$HIV_tocART), method = "spearman") # R 0.63
+
+
+# Bind to Data 3 the values of UD_MAP
+Data.Immune_UD_MAP <- cbind(Data.Immune, cl_params5.w6$UD_MAP)
+rownames(Data.Immune_UD_MAP)
+colnames(Data.Immune_UD_MAP) <- c(colnames(Data.Immune), "UD_MAP")
+id2 <- colnames(Data.Immune_UD_MAP)
+Data.Immune_UD_MAP <- apply(Data.Immune_UD_MAP, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with UD_MAP
+library(Hmisc)
+res_corrUD_MAP <- rcorr(Data.Immune_UD_MAP,type="spearman") #Correlation between columns
+mat_corrUD_MAP <- res_corrUD_MAP$r
+pval_corrUD_MAP <- res_corrUD_MAP$P
+
+#Select all the correlations with UD_MAP
+df_UD_MAP <- data.frame(mat_corrUD_MAP[nrow(mat_corrUD_MAP),], pval_corrUD_MAP[nrow(pval_corrUD_MAP),])
+
+df_UD_MAP$Name <- c(rownames(df_UD_MAP))
+df_UD_MAP$class <- "UD_MAP"
+colnames(df_UD_MAP) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of UD_MAP with UD_MAP, only correlations of CpG with UD_MAP now
+df_UD_MAP <- df_UD_MAP[-nrow(df_UD_MAP),]
+df_UD_MAP$qvalue <- p.adjust(df_UD_MAP$pval, method = "fdr")
+df_UD_MAP <- df_UD_MAP[order(abs(df_UD_MAP$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.Immune_UD_MAP[,"cg24004745_IL1RAP"]), as.numeric(cl_params5.w6$UD_MAP), method = "spearman") # R= 0.46  p = 0.12
+
+
+
+library(dplyr)
+df_Immune <- bind_rows(list(df_Proviral, df_SCA, df_CA_RNA, df_H3Ac, df_Magnitude_HIVconsv,df_Breadth_HIVconsv, df_Magnitude_HIVtotal, df_Breadth_HIVtotal, df_VL_MAP, df_time_MAP, df_Time_on_cART_BCN02, df_VL_cART_initiation, df_HIV_tocART, df_UD_MAP))
+
+df_Immune$module <- "Immune"
+
+write.table(df_Immune, file = "../HeatmapMeth/df_Immune_new.txt", sep = "\t")
+
+
+
+```
+
+```{r}
+Rebound2 <- rownames(mat.Immune2)
+Late <- grep("A02|A05|A09|B13", Rebound2)
+Rebound2[Late] <- "Late"
+Rebound2[-Late] <- "Early"
+
+Rebound.col <- rownames(mat.Immune2)
+Rebound.col[Late] <- "orange"
+Rebound.col[-Late] <- "blue"
+
+df_SCA.Immune <- df_SCA[colnames(mat.Immune2),]
+RhoSCA.Immune <- df_SCA.Immune$Rho
+
+df_Proviral.Immune <- df_Proviral[colnames(mat.Immune2),]
+RhoProviral.Immune <- df_Proviral.Immune$Rho
+
+df_CA_RNA.Immune <- df_CA_RNA[colnames(mat.Immune2),]
+RhoCA_RNA.Immune <- df_CA_RNA.Immune$Rho
+
+df_H3Ac.Immune <- df_H3Ac[colnames(mat.Immune2),]
+RhoH3Ac.Immune <- df_H3Ac.Immune$Rho
+
+
+df_Magnitude.Immune <- df_Magnitude_HIVconsv[colnames(mat.Immune2),]
+RhoMagnitude.Immune <- df_Magnitude.Immune$Rho
+
+df_Breadth.Immune <- df_Breadth_HIVconsv[colnames(mat.Immune2),]
+RhoBreadth.Immune <- df_Breadth.Immune$Rho
+
+
+df_MagnitudeHIVtotal.Immune <- df_Magnitude_HIVtotal[colnames(mat.Immune2),]
+RhoMagnitudeHIVtotal.Immune <- df_MagnitudeHIVtotal.Immune$Rho
+
+df_BreadthHIVtotal.Immune <- df_Breadth_HIVtotal[colnames(mat.Immune2),]
+RhoBreadthHIVtotal.Immune <- df_BreadthHIVtotal.Immune$Rho
+
+
+df_VL_MAP.Immune <- df_VL_MAP[colnames(mat.Immune2),]
+RhoVL_MAP.Immune <- df_VL_MAP.Immune$Rho
+
+df_time_MAP.Immune <- df_time_MAP[colnames(mat.Immune2),]
+Rhotime_MAP.Immune <- df_time_MAP.Immune$Rho
+
+df_Time_on_cART_BCN02.Immune <- df_Time_on_cART_BCN02[colnames(mat.Immune2),]
+RhoTime_on_cART_BCN02.Immune <- df_Time_on_cART_BCN02.Immune$Rho
+
+df_VL_cART_initiation.Immune <- df_VL_cART_initiation[colnames(mat.Immune2),]
+RhoVL_cART_initiation.Immune <- df_VL_cART_initiation.Immune$Rho
+
+df_HIV_tocART.Immune <- df_HIV_tocART[colnames(mat.Immune2),]
+RhoHIV_tocART.Immune <- df_HIV_tocART.Immune$Rho
+
+df_UD_MAP.Immune <- df_UD_MAP[colnames(mat.Immune2),]
+RhoUD_MAP.Immune <- df_UD_MAP.Immune$Rho
+
+
+column_ha = HeatmapAnnotation(Rebound = Rebound2, col = list(Rebound = c("Late" = "orange", "Early" = "blue")))
+
+col_fun = colorRamp2(c(-1, 0, 1), c("red", "white", "blue")) #Viral
+col_fun2 = colorRamp2(c(-1, 0, 1), c("pink", "white", "purple")) #ELISPOTdata
+col_fun3 = colorRamp2(c(-1, 0, 1), c("orange", "white", "brown")) # BCN02 entry
+col_fun4 = colorRamp2(c(-1, 0, 1), c("grey", "white", "darkblue")) # MAP data
+
+
+
+row_ha.Immune = rowAnnotation(Proviral = RhoProviral.Immune, SCA = RhoSCA.Immune, CA_RNA = RhoCA_RNA.Immune, H3Ac = RhoH3Ac.Immune, Magnitude = RhoMagnitude.Immune, Breadth = RhoBreadth.Immune, Magnitude_HIVtotal = RhoMagnitudeHIVtotal.Immune, Breadth_HIVtotal = RhoBreadthHIVtotal.Immune, VL_MAP = RhoVL_MAP.Immune, time = Rhotime_MAP.Immune, time_cART_BCN02_entry = RhoTime_on_cART_BCN02.Immune, VL_cART_initiation = RhoVL_cART_initiation.Immune, HIV_tocART = RhoHIV_tocART.Immune, UD_MAP = RhoUD_MAP.Immune, col = list(Proviral = col_fun, SCA = col_fun, CA_RNA = col_fun, H3Ac = col_fun, Magnitude = col_fun2, Breadth = col_fun2,Magnitude_HIVtotal = col_fun2, Breadth_HIVtotal = col_fun2, VL_MAP =col_fun4, time = col_fun4, time_cART_BCN02_entry = col_fun3, VL_cART_initiation = col_fun3, HIV_tocART =col_fun3, UD_MAP = col_fun3))
+
+
+Heatmap(t(mat.Immune2), show_column_dend = FALSE,cluster_columns = FALSE,  col = colorRamp2(c(-2,2), c( c("red", "yellow"))),row_names_gp = gpar(fontsize = 7), height = unit(2.5, "mm")*nrow(t(mat.Immune2)), top_annotation = column_ha, right_annotation = row_ha.Immune)
+
+pdf("../HeatmapMeth/Immune_Corrparams_new.pdf", height = 25, width = 15)
+
+Heatmap(t(mat.Immune2), show_column_dend = FALSE,cluster_columns = FALSE,  col = colorRamp2(c(-2,2), c( c("red", "yellow"))),row_names_gp = gpar(fontsize = 7), height = unit(2.5, "mm")*nrow(t(mat.Immune2)), top_annotation = column_ha, right_annotation = row_ha.Immune)
+dev.off()
+
+
+```
+
+
+
+#CellSignaling
+```{r}
+
+Signaling <- unique(c(Genes_in_Module$`Cell signaling`))
+Signaling.df <- data.frame(Signaling)
+length(Signaling)# 2174
+
+library(gprofiler2)
+Signalingconvert <- gconvert(query = as.character(Signaling) , organism = "hsapiens",
+         target="UCSC", mthreshold = Inf, filter_na = TRUE)
+
+Signaling.genes <- unique(c(Signalingconvert$input, Signalingconvert$name))
+
+
+#Genes associated with Signaling response
+EvsLw6.Signaling <- subset(Genes_EvsLw6.ok, Genes_EvsLw6.ok$Gene %in% Signaling.genes) #1738
+length(unique(EvsLw6.Signaling$Gene))#13
+
+
+```
+
+
+```{r}
+
+#Read DNAmet at w6
+CpGs_Signaling <-paste0("^", as.character(EvsLw6.Signaling$Row.names))
+CpGs_Signaling_ok <-paste0(CpGs_Signaling, collapse = "|")
+
+DNAMethyl1.Signaling <- DNAMethyl1[grep(CpGs_Signaling_ok, rownames(DNAMethyl1)), ]
+
+
+ann450.Signaling <- ann450[rownames(DNAMethyl1.Signaling),]
+df.Signaling <- data.frame(rownames(ann450.Signaling), rownames(DNAMethyl1.Signaling))
+rownames(DNAMethyl1.Signaling) <- ann450.Signaling$CpG_Gene
+
+
+mat.Signaling <- as.matrix(DNAMethyl1.Signaling)
+colnames(mat.Signaling) <- gsub(".w6", "" ,colnames(mat.Signaling))
+mat.Signaling <- mat.Signaling[, c("B13", "A02", "A05", "A09", "A04", "B14", "B10", "B06", "A15", "A13", "A12", "B05")]
+
+Rebound2 <- colnames(mat.Signaling )
+Late <- grep("A02|A05|A09|B13", Rebound2)
+Rebound2[Late] <- "orange"
+Rebound2[-Late] <- "blue"
+
+#Z-score
+
+mat.Signaling2 <- scale(t(mat.Signaling))
+
+Heatmap(t(mat.Signaling2), show_column_dend = TRUE, cluster_columns = FALSE,  col = colorRamp2(c(-2,2), c( c("red", "yellow"))))
+
+```
+
+
+
+
+#Correlations of Signaling Genes. 
+
+```{r}
+
+cl_params <- read.csv("../../BCN02-INFO/ClincalandImmuneinfow6_viral.csv", header = TRUE, stringsAsFactors = FALSE)
+cl_params.w6 <- cl_params[,c(1, grep("w6", colnames(cl_params)))]
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params.w6) <- cl_params.w6$X
+colnames(cl_params.w6) <- c("patient", "Proviral", "SCA", "CA_RNA", "H3Ac")
+cl_params.w6 <- cl_params.w6[grep(paste0(colnames(mat.Signaling), collapse = "|"), rownames(cl_params.w6)),]
+cl_params.w6 <- cl_params.w6[colnames(mat.Signaling),]
+
+names.order <- data.frame(cl_params.w6$patient, colnames(mat.Signaling))
+
+
+# Transpose beta values for selected cg --> Patients in rows now and cg probes in columns
+# there's no longer the name of the cg
+Data.Signaling <- t(mat.Signaling)
+Data.Signaling[1:10, 1:10]
+dim(Data.Signaling)
+
+# Bind to Data 3 the values of Proviral
+Data.Signaling_Proviral <- cbind(Data.Signaling, cl_params.w6$Proviral)
+rownames(Data.Signaling_Proviral)
+colnames(Data.Signaling_Proviral) <- c(colnames(Data.Signaling), "Proviral")
+id2 <- colnames(Data.Signaling_Proviral)
+Data.Signaling_Proviral <- apply(Data.Signaling_Proviral, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Proviral
+library(Hmisc)
+res_corrProviral <- rcorr(Data.Signaling_Proviral,type="spearman") #Correlation between columns
+mat_corrProviral <- res_corrProviral$r
+pval_corrProviral <- res_corrProviral$P
+
+#Select all the correlations with Proviral
+df_Proviral <- data.frame(mat_corrProviral[nrow(mat_corrProviral),], pval_corrProviral[nrow(pval_corrProviral),])
+
+df_Proviral$Name <- c(rownames(df_Proviral))
+df_Proviral$class <- "Proviral"
+colnames(df_Proviral) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Proviral with Proviral, only correlations of CpG with Proviral now
+df_Proviral <- df_Proviral[-nrow(df_Proviral),]
+df_Proviral$qvalue <- p.adjust(df_Proviral$pval, method = "fdr")
+df_Proviral <- df_Proviral[order(abs(df_Proviral$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.Signaling_Proviral[,"cg12075498_JAK1"]), as.numeric(cl_params.w6$Proviral), method = "spearman") 
+
+
+#SCA
+Data.Signaling_SCA <- cbind(Data.Signaling, cl_params.w6$SCA)
+rownames(Data.Signaling_SCA)
+id2 <- colnames(Data.Signaling_SCA)
+Data.Signaling_SCA <- apply(Data.Signaling_SCA, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with SCA
+library(Hmisc)
+res_corrSCA <- rcorr(Data.Signaling_SCA,type="spearman") #Correlation between columns
+mat_corrSCA <- res_corrSCA$r
+pval_corrSCA <- res_corrSCA$P
+
+#Select all the correlations with SCA
+df_SCA <- data.frame(mat_corrSCA[nrow(mat_corrSCA),], pval_corrSCA[nrow(pval_corrSCA),])
+
+df_SCA$Name <- c(rownames(df_SCA))
+df_SCA$class <- "SCA"
+colnames(df_SCA) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of SCA with SCA, only correlations of CpG with SCA now
+df_SCA <- df_SCA[-nrow(df_SCA),]
+df_SCA$qvalue <- p.adjust(df_SCA$pval, method = "fdr")
+df_SCA <- df_SCA[order(abs(df_SCA$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.Signaling_SCA[,"cg12075498_JAK1"]), as.numeric(cl_params.w6$SCA), method = "spearman") 
+
+
+#CA-RNA
+Data.Signaling_CA_RNA <- cbind(Data.Signaling, cl_params.w6$CA_RNA)
+rownames(Data.Signaling_CA_RNA)
+id2 <- colnames(Data.Signaling_CA_RNA)
+Data.Signaling_CA_RNA <- apply(Data.Signaling_CA_RNA, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with CA_RNA
+library(Hmisc)
+res_corrCA_RNA <- rcorr(Data.Signaling_CA_RNA,type="spearman") #Correlation between columns
+mat_corrCA_RNA <- res_corrCA_RNA$r
+pval_corrCA_RNA <- res_corrCA_RNA$P
+
+#Select all the correlations with CA_RNA
+df_CA_RNA <- data.frame(mat_corrCA_RNA[nrow(mat_corrCA_RNA),], pval_corrCA_RNA[nrow(pval_corrCA_RNA),])
+
+df_CA_RNA$Name <- c(rownames(df_CA_RNA))
+df_CA_RNA$class <- "CA_RNA"
+colnames(df_CA_RNA) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of CA_RNA with CA_RNA, only correlations of CpG with CA_RNA now
+df_CA_RNA <- df_CA_RNA[-nrow(df_CA_RNA),]
+df_CA_RNA$qvalue <- p.adjust(df_CA_RNA$pval, method = "fdr")
+df_CA_RNA <- df_CA_RNA[order(abs(df_CA_RNA$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.Signaling_CA_RNA[,"cg12075498_JAK1"]), as.numeric(cl_params.w6$CA_RNA), method = "spearman") 
+
+#H3Ac
+Data.Signaling_H3Ac <- cbind(Data.Signaling, cl_params.w6$H3Ac)
+rownames(Data.Signaling_H3Ac)
+id2 <- colnames(Data.Signaling_H3Ac)
+Data.Signaling_H3Ac <- apply(Data.Signaling_H3Ac, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with H3Ac
+library(Hmisc)
+res_corrH3Ac <- rcorr(Data.Signaling_H3Ac,type="spearman") #Correlation between columns
+mat_corrH3Ac <- res_corrH3Ac$r
+pval_corrH3Ac <- res_corrH3Ac$P
+
+#Select all the correlations with H3Ac
+df_H3Ac <- data.frame(mat_corrH3Ac[nrow(mat_corrH3Ac),], pval_corrH3Ac[nrow(pval_corrH3Ac),])
+
+df_H3Ac$Name <- c(rownames(df_H3Ac))
+df_H3Ac$class <- "H3Ac"
+colnames(df_H3Ac) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of H3Ac with H3Ac, only correlations of CpG with H3Ac now
+df_H3Ac <- df_H3Ac[-nrow(df_H3Ac),]
+df_H3Ac$qvalue <- p.adjust(df_H3Ac$pval, method = "fdr")
+df_H3Ac <- df_H3Ac[order(abs(df_H3Ac$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data.Signaling_H3Ac[,"cg12075498_JAK1"]), as.numeric(cl_params.w6$H3Ac), method = "spearman") 
+
+
+
+
+
+
+#ELISPOT Data
+
+cl_params3.w6 <- read.csv("../../BCN02-INFO/ELISPOT._datacsv.csv", header = TRUE, stringsAsFactors = FALSE)
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params3.w6) <- cl_params3.w6$X
+colnames(cl_params3.w6) <- c("patient", "Magnitude_HIVconsv","Breadth_HIVconsv",
+                             "Magnitude_HIVtotal","Breadth_HIVtotal"  )
+cl_params3.w6 <- cl_params3.w6[grep(paste0(colnames(mat.Signaling), collapse = "|"), rownames(cl_params3.w6)),]
+cl_params3.w6 <- cl_params3.w6[colnames(mat.Signaling),]
+
+names.order <- data.frame(cl_params3.w6$patient, colnames(mat.Signaling))
+
+
+# Bind to Data 3 the values of Magnitude_HIVconsv
+Data.Signaling_Magnitude_HIVconsv <- cbind(Data.Signaling, cl_params3.w6$Magnitude_HIVconsv)
+rownames(Data.Signaling_Magnitude_HIVconsv)
+colnames(Data.Signaling_Magnitude_HIVconsv) <- c(colnames(Data.Signaling), "Magnitude_HIVconsv")
+id2 <- colnames(Data.Signaling_Magnitude_HIVconsv)
+Data.Signaling_Magnitude_HIVconsv <- apply(Data.Signaling_Magnitude_HIVconsv, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Magnitude_HIVconsv
+library(Hmisc)
+res_corrMagnitude_HIVconsv <- rcorr(Data.Signaling_Magnitude_HIVconsv,type="spearman") #Correlation between columns
+mat_corrMagnitude_HIVconsv <- res_corrMagnitude_HIVconsv$r
+pval_corrMagnitude_HIVconsv <- res_corrMagnitude_HIVconsv$P
+
+#Select all the correlations with Magnitude_HIVconsv
+df_Magnitude_HIVconsv <- data.frame(mat_corrMagnitude_HIVconsv[nrow(mat_corrMagnitude_HIVconsv),], pval_corrMagnitude_HIVconsv[nrow(pval_corrMagnitude_HIVconsv),])
+
+df_Magnitude_HIVconsv$Name <- c(rownames(df_Magnitude_HIVconsv))
+df_Magnitude_HIVconsv$class <- "Magnitude_HIVconsv"
+colnames(df_Magnitude_HIVconsv) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Magnitude_HIVconsv with Magnitude_HIVconsv, only correlations of CpG with Magnitude_HIVconsv now
+df_Magnitude_HIVconsv <- df_Magnitude_HIVconsv[-nrow(df_Magnitude_HIVconsv),]
+df_Magnitude_HIVconsv$qvalue <- p.adjust(df_Magnitude_HIVconsv$pval, method = "fdr")
+df_Magnitude_HIVconsv <- df_Magnitude_HIVconsv[order(abs(df_Magnitude_HIVconsv$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+
+cor.test(as.numeric(mat.Signaling["cg12075498_JAK1",]), as.numeric(cl_params3.w6$Magnitude_HIVconsv), method = "spearman") 
+
+
+
+
+# Bind to Data 3 the values of Breadth_HIVconsv
+Data.Signaling_Breadth_HIVconsv <- cbind(Data.Signaling, cl_params3.w6$Breadth_HIVconsv)
+rownames(Data.Signaling_Breadth_HIVconsv)
+colnames(Data.Signaling_Breadth_HIVconsv) <- c(colnames(Data.Signaling), "Breadth_HIVconsv")
+id2 <- colnames(Data.Signaling_Breadth_HIVconsv)
+Data.Signaling_Breadth_HIVconsv <- apply(Data.Signaling_Breadth_HIVconsv, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Breadth_HIVconsv
+library(Hmisc)
+res_corrBreadth_HIVconsv <- rcorr(Data.Signaling_Breadth_HIVconsv,type="spearman") #Correlation between columns
+mat_corrBreadth_HIVconsv <- res_corrBreadth_HIVconsv$r
+pval_corrBreadth_HIVconsv <- res_corrBreadth_HIVconsv$P
+
+#Select all the correlations with Breadth_HIVconsv
+df_Breadth_HIVconsv <- data.frame(mat_corrBreadth_HIVconsv[nrow(mat_corrBreadth_HIVconsv),], pval_corrBreadth_HIVconsv[nrow(pval_corrBreadth_HIVconsv),])
+
+df_Breadth_HIVconsv$Name <- c(rownames(df_Breadth_HIVconsv))
+df_Breadth_HIVconsv$class <- "Breadth_HIVconsv"
+colnames(df_Breadth_HIVconsv) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Breadth_HIVconsv with Breadth_HIVconsv, only correlations of CpG with Breadth_HIVconsv now
+df_Breadth_HIVconsv <- df_Breadth_HIVconsv[-nrow(df_Breadth_HIVconsv),]
+df_Breadth_HIVconsv$qvalue <- p.adjust(df_Breadth_HIVconsv$pval, method = "fdr")
+df_Breadth_HIVconsv <- df_Breadth_HIVconsv[order(abs(df_Breadth_HIVconsv$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.Signaling["cg12075498_JAK1",]), as.numeric(cl_params3.w6$Breadth_HIVconsv), method = "spearman") 
+
+cor.test(as.numeric(Data.Signaling_Breadth_HIVconsv[,"cg00502469_RASA3"]), as.numeric(cl_params3.w6$Breadth_HIVconsv), method = "spearman") # R-0.3852896  p = 0.21
+
+
+
+# Bind to Data 3 the values of Magnitude_HIVtotal
+Data.Signaling_Magnitude_HIVtotal <- cbind(Data.Signaling, cl_params3.w6$Magnitude_HIVtotal)
+rownames(Data.Signaling_Magnitude_HIVtotal)
+colnames(Data.Signaling_Magnitude_HIVtotal) <- c(colnames(Data.Signaling), "Magnitude_HIVtotal")
+id2 <- colnames(Data.Signaling_Magnitude_HIVtotal)
+Data.Signaling_Magnitude_HIVtotal <- apply(Data.Signaling_Magnitude_HIVtotal, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Magnitude_HIVtotal
+library(Hmisc)
+res_corrMagnitude_HIVtotal <- rcorr(Data.Signaling_Magnitude_HIVtotal,type="spearman") #Correlation between columns
+mat_corrMagnitude_HIVtotal <- res_corrMagnitude_HIVtotal$r
+pval_corrMagnitude_HIVtotal <- res_corrMagnitude_HIVtotal$P
+
+#Select all the correlations with Magnitude_HIVtotal
+df_Magnitude_HIVtotal <- data.frame(mat_corrMagnitude_HIVtotal[nrow(mat_corrMagnitude_HIVtotal),], pval_corrMagnitude_HIVtotal[nrow(pval_corrMagnitude_HIVtotal),])
+
+df_Magnitude_HIVtotal$Name <- c(rownames(df_Magnitude_HIVtotal))
+df_Magnitude_HIVtotal$class <- "Magnitude_HIVtotal"
+colnames(df_Magnitude_HIVtotal) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Magnitude_HIVtotal with Magnitude_HIVtotal, only correlations of CpG with Magnitude_HIVtotal now
+df_Magnitude_HIVtotal <- df_Magnitude_HIVtotal[-nrow(df_Magnitude_HIVtotal),]
+df_Magnitude_HIVtotal$qvalue <- p.adjust(df_Magnitude_HIVtotal$pval, method = "fdr")
+df_Magnitude_HIVtotal <- df_Magnitude_HIVtotal[order(abs(df_Magnitude_HIVtotal$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+
+cor.test(as.numeric(mat.Signaling["cg12075498_JAK1",]), as.numeric(cl_params3.w6$Magnitude_HIVtotal), method = "spearman") 
+
+cor.test(as.numeric(Data.Signaling_Magnitude_HIVtotal[,"cg00502469_RASA3"]), as.numeric(cl_params3.w6$Magnitude_HIVtotal), method = "spearman") 
+
+
+
+# Bind to Data 3 the values of Breadth_HIVtotal
+Data.Signaling_Breadth_HIVtotal <- cbind(Data.Signaling, cl_params3.w6$Breadth_HIVtotal)
+rownames(Data.Signaling_Breadth_HIVtotal)
+colnames(Data.Signaling_Breadth_HIVtotal) <- c(colnames(Data.Signaling), "Breadth_HIVtotal")
+id2 <- colnames(Data.Signaling_Breadth_HIVtotal)
+Data.Signaling_Breadth_HIVtotal <- apply(Data.Signaling_Breadth_HIVtotal, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Breadth_HIVtotal
+library(Hmisc)
+res_corrBreadth_HIVtotal <- rcorr(Data.Signaling_Breadth_HIVtotal,type="spearman") #Correlation between columns
+mat_corrBreadth_HIVtotal <- res_corrBreadth_HIVtotal$r
+pval_corrBreadth_HIVtotal <- res_corrBreadth_HIVtotal$P
+
+#Select all the correlations with Breadth_HIVtotal
+df_Breadth_HIVtotal <- data.frame(mat_corrBreadth_HIVtotal[nrow(mat_corrBreadth_HIVtotal),], pval_corrBreadth_HIVtotal[nrow(pval_corrBreadth_HIVtotal),])
+
+df_Breadth_HIVtotal$Name <- c(rownames(df_Breadth_HIVtotal))
+df_Breadth_HIVtotal$class <- "Breadth_HIVtotal"
+colnames(df_Breadth_HIVtotal) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Breadth_HIVtotal with Breadth_HIVtotal, only correlations of CpG with Breadth_HIVtotal now
+df_Breadth_HIVtotal <- df_Breadth_HIVtotal[-nrow(df_Breadth_HIVtotal),]
+df_Breadth_HIVtotal$qvalue <- p.adjust(df_Breadth_HIVtotal$pval, method = "fdr")
+df_Breadth_HIVtotal <- df_Breadth_HIVtotal[order(abs(df_Breadth_HIVtotal$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.Signaling["cg12075498_JAK1",]), as.numeric(cl_params3.w6$Breadth_HIVtotal), method = "spearman") 
+cor.test(as.numeric(mat.Signaling["cg00502469_RASA3",]), as.numeric(cl_params3.w6$Breadth_HIVtotal), method = "spearman") 
+
+
+
+
+
+#Data VL at day of cART ressumption and time to rebound. 
+
+
+cl_params4.w6 <- read.csv("../../BCN02-INFO/MAP_outcome.csv", header = TRUE, stringsAsFactors = FALSE)
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params4.w6) <- cl_params4.w6$PatientID
+colnames(cl_params4.w6) <- c("patient", "VL_MAP","time_MAP"  )
+cl_params4.w6 <- cl_params4.w6[grep(paste0(colnames(mat.Signaling), collapse = "|"), rownames(cl_params4.w6)),]
+cl_params4.w6 <- cl_params4.w6[colnames(mat.Signaling),]
+
+names.order <- data.frame(cl_params4.w6$patient, colnames(mat.Signaling))
+
+
+# Bind to Data 3 the values of VL_MAP
+Data.Signaling_VL_MAP <- cbind(Data.Signaling, cl_params4.w6$VL_MAP)
+rownames(Data.Signaling_VL_MAP)
+colnames(Data.Signaling_VL_MAP) <- c(colnames(Data.Signaling), "VL_MAP")
+id2 <- colnames(Data.Signaling_VL_MAP)
+Data.Signaling_VL_MAP <- apply(Data.Signaling_VL_MAP, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with VL_MAP
+library(Hmisc)
+res_corrVL_MAP <- rcorr(Data.Signaling_VL_MAP,type="spearman") #Correlation between columns
+mat_corrVL_MAP <- res_corrVL_MAP$r
+pval_corrVL_MAP <- res_corrVL_MAP$P
+
+#Select all the correlations with VL_MAP
+df_VL_MAP <- data.frame(mat_corrVL_MAP[nrow(mat_corrVL_MAP),], pval_corrVL_MAP[nrow(pval_corrVL_MAP),])
+
+df_VL_MAP$Name <- c(rownames(df_VL_MAP))
+df_VL_MAP$class <- "VL_MAP"
+colnames(df_VL_MAP) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of VL_MAP with VL_MAP, only correlations of CpG with VL_MAP now
+df_VL_MAP <- df_VL_MAP[-nrow(df_VL_MAP),]
+df_VL_MAP$qvalue <- p.adjust(df_VL_MAP$pval, method = "fdr")
+df_VL_MAP <- df_VL_MAP[order(abs(df_VL_MAP$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.Signaling["cg12075498_JAK1",]), as.numeric(cl_params4.w6$VL_MAP), method = "spearman") 
+cor.test(as.numeric(mat.Signaling["cg00502469_RASA3",]), as.numeric(cl_params4.w6$VL_MAP), method = "spearman") 
+
+
+# Bind to Data 3 the values of time_MAP
+Data.Signaling_time_MAP <- cbind(Data.Signaling, cl_params4.w6$time_MAP)
+rownames(Data.Signaling_time_MAP)
+colnames(Data.Signaling_time_MAP) <- c(colnames(Data.Signaling), "time_MAP")
+id2 <- colnames(Data.Signaling_time_MAP)
+Data.Signaling_time_MAP <- apply(Data.Signaling_time_MAP, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with time_MAP
+library(Hmisc)
+res_corrtime_MAP <- rcorr(Data.Signaling_time_MAP,type="spearman") #Correlation between columns
+mat_corrtime_MAP <- res_corrtime_MAP$r
+pval_corrtime_MAP <- res_corrtime_MAP$P
+
+#Select all the correlations with time_MAP
+df_time_MAP <- data.frame(mat_corrtime_MAP[nrow(mat_corrtime_MAP),], pval_corrtime_MAP[nrow(pval_corrtime_MAP),])
+
+df_time_MAP$Name <- c(rownames(df_time_MAP))
+df_time_MAP$class <- "time_MAP"
+colnames(df_time_MAP) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of time_MAP with time_MAP, only correlations of CpG with time_MAP now
+df_time_MAP <- df_time_MAP[-nrow(df_time_MAP),]
+df_time_MAP$qvalue <- p.adjust(df_time_MAP$pval, method = "fdr")
+df_time_MAP <- df_time_MAP[order(abs(df_time_MAP$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+
+cor.test(as.numeric(mat.Signaling["cg12075498_JAK1",]), as.numeric(cl_params4.w6$time_MAP), method = "spearman") 
+cor.test(as.numeric(mat.Signaling["cg00502469_RASA3",]), as.numeric(cl_params4.w6$time_MAP), method = "spearman") 
+
+
+cl_params5.w6 <- read.csv("../../BCN02-INFO/preCART_info.csv", header = TRUE, stringsAsFactors = FALSE)
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params5.w6) <- cl_params5.w6$PatientID
+colnames(cl_params5.w6) <- c("patient", "Time_on_cART_BCN02", "VL_cART_initiation", "HIV_tocART", "UD_MAP" )
+cl_params5.w6 <- cl_params5.w6[grep(paste0(colnames(mat.Signaling), collapse = "|"), rownames(cl_params5.w6)),]
+cl_params5.w6 <- cl_params5.w6[colnames(mat.Signaling),]
+
+names.order <- data.frame(cl_params5.w6$patient, colnames(mat.Signaling))
+
+
+# Bind to Data 3 the values of Time_on_cART_BCN02
+Data.Signaling_Time_on_cART_BCN02 <- cbind(Data.Signaling, cl_params5.w6$Time_on_cART_BCN02)
+rownames(Data.Signaling_Time_on_cART_BCN02)
+colnames(Data.Signaling_Time_on_cART_BCN02) <- c(colnames(Data.Signaling), "Time_on_cART_BCN02")
+id2 <- colnames(Data.Signaling_Time_on_cART_BCN02)
+Data.Signaling_Time_on_cART_BCN02 <- apply(Data.Signaling_Time_on_cART_BCN02, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Time_on_cART_BCN02
+library(Hmisc)
+res_corrTime_on_cART_BCN02 <- rcorr(Data.Signaling_Time_on_cART_BCN02,type="spearman") #Correlation between columns
+mat_corrTime_on_cART_BCN02 <- res_corrTime_on_cART_BCN02$r
+pval_corrTime_on_cART_BCN02 <- res_corrTime_on_cART_BCN02$P
+
+#Select all the correlations with Time_on_cART_BCN02
+df_Time_on_cART_BCN02 <- data.frame(mat_corrTime_on_cART_BCN02[nrow(mat_corrTime_on_cART_BCN02),], pval_corrTime_on_cART_BCN02[nrow(pval_corrTime_on_cART_BCN02),])
+
+df_Time_on_cART_BCN02$Name <- c(rownames(df_Time_on_cART_BCN02))
+df_Time_on_cART_BCN02$class <- "Time_on_cART_BCN02"
+colnames(df_Time_on_cART_BCN02) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Time_on_cART_BCN02 with Time_on_cART_BCN02, only correlations of CpG with Time_on_cART_BCN02 now
+df_Time_on_cART_BCN02 <- df_Time_on_cART_BCN02[-nrow(df_Time_on_cART_BCN02),]
+df_Time_on_cART_BCN02$qvalue <- p.adjust(df_Time_on_cART_BCN02$pval, method = "fdr")
+df_Time_on_cART_BCN02 <- df_Time_on_cART_BCN02[order(abs(df_Time_on_cART_BCN02$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+
+cor.test(as.numeric(mat.Signaling["cg12075498_JAK1",]), as.numeric(cl_params5.w6$Time_on_cART_BCN02), method = "spearman") 
+cor.test(as.numeric(mat.Signaling["cg00502469_RASA3",]), as.numeric(cl_params5.w6$Time_on_cART_BCN02), method = "spearman") 
+
+
+
+
+# Bind to Data 3 the values of VL_cART_initiation
+Data.Signaling_VL_cART_initiation <- cbind(Data.Signaling, cl_params5.w6$VL_cART_initiation)
+rownames(Data.Signaling_VL_cART_initiation)
+colnames(Data.Signaling_VL_cART_initiation) <- c(colnames(Data.Signaling), "VL_cART_initiation")
+id2 <- colnames(Data.Signaling_VL_cART_initiation)
+Data.Signaling_VL_cART_initiation <- apply(Data.Signaling_VL_cART_initiation, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with VL_cART_initiation
+library(Hmisc)
+res_corrVL_cART_initiation <- rcorr(Data.Signaling_VL_cART_initiation,type="spearman") #Correlation between columns
+mat_corrVL_cART_initiation <- res_corrVL_cART_initiation$r
+pval_corrVL_cART_initiation <- res_corrVL_cART_initiation$P
+
+#Select all the correlations with VL_cART_initiation
+df_VL_cART_initiation <- data.frame(mat_corrVL_cART_initiation[nrow(mat_corrVL_cART_initiation),], pval_corrVL_cART_initiation[nrow(pval_corrVL_cART_initiation),])
+
+df_VL_cART_initiation$Name <- c(rownames(df_VL_cART_initiation))
+df_VL_cART_initiation$class <- "VL_cART_initiation"
+colnames(df_VL_cART_initiation) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of VL_cART_initiation with VL_cART_initiation, only correlations of CpG with VL_cART_initiation now
+df_VL_cART_initiation <- df_VL_cART_initiation[-nrow(df_VL_cART_initiation),]
+df_VL_cART_initiation$qvalue <- p.adjust(df_VL_cART_initiation$pval, method = "fdr")
+df_VL_cART_initiation <- df_VL_cART_initiation[order(abs(df_VL_cART_initiation$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.Signaling["cg12075498_JAK1",]), as.numeric(cl_params5.w6$VL_cART_initiation), method = "spearman") 
+cor.test(as.numeric(mat.Signaling["cg00502469_RASA3",]), as.numeric(cl_params5.w6$VL_cART_initiation), method = "spearman") 
+
+
+
+
+# Bind to Data 3 the values of HIV_tocART
+Data.Signaling_HIV_tocART <- cbind(Data.Signaling, cl_params5.w6$HIV_tocART)
+rownames(Data.Signaling_HIV_tocART)
+colnames(Data.Signaling_HIV_tocART) <- c(colnames(Data.Signaling), "HIV_tocART")
+id2 <- colnames(Data.Signaling_HIV_tocART)
+Data.Signaling_HIV_tocART <- apply(Data.Signaling_HIV_tocART, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with HIV_tocART
+library(Hmisc)
+res_corrHIV_tocART <- rcorr(Data.Signaling_HIV_tocART,type="spearman") #Correlation between columns
+mat_corrHIV_tocART <- res_corrHIV_tocART$r
+pval_corrHIV_tocART <- res_corrHIV_tocART$P
+
+#Select all the correlations with HIV_tocART
+df_HIV_tocART <- data.frame(mat_corrHIV_tocART[nrow(mat_corrHIV_tocART),], pval_corrHIV_tocART[nrow(pval_corrHIV_tocART),])
+
+df_HIV_tocART$Name <- c(rownames(df_HIV_tocART))
+df_HIV_tocART$class <- "HIV_tocART"
+colnames(df_HIV_tocART) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of HIV_tocART with HIV_tocART, only correlations of CpG with HIV_tocART now
+df_HIV_tocART <- df_HIV_tocART[-nrow(df_HIV_tocART),]
+df_HIV_tocART$qvalue <- p.adjust(df_HIV_tocART$pval, method = "fdr")
+df_HIV_tocART <- df_HIV_tocART[order(abs(df_HIV_tocART$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+
+cor.test(as.numeric(mat.Signaling["cg12075498_JAK1",]), as.numeric(cl_params5.w6$HIV_tocART), method = "spearman") 
+cor.test(as.numeric(mat.Signaling["cg00502469_RASA3",]), as.numeric(cl_params5.w6$HIV_tocART), method = "spearman") 
+
+
+# Bind to Data 3 the values of UD_MAP
+Data.Signaling_UD_MAP <- cbind(Data.Signaling, cl_params5.w6$UD_MAP)
+rownames(Data.Signaling_UD_MAP)
+colnames(Data.Signaling_UD_MAP) <- c(colnames(Data.Signaling), "UD_MAP")
+id2 <- colnames(Data.Signaling_UD_MAP)
+Data.Signaling_UD_MAP <- apply(Data.Signaling_UD_MAP, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with UD_MAP
+library(Hmisc)
+res_corrUD_MAP <- rcorr(Data.Signaling_UD_MAP,type="spearman") #Correlation between columns
+mat_corrUD_MAP <- res_corrUD_MAP$r
+pval_corrUD_MAP <- res_corrUD_MAP$P
+
+#Select all the correlations with UD_MAP
+df_UD_MAP <- data.frame(mat_corrUD_MAP[nrow(mat_corrUD_MAP),], pval_corrUD_MAP[nrow(pval_corrUD_MAP),])
+
+df_UD_MAP$Name <- c(rownames(df_UD_MAP))
+df_UD_MAP$class <- "UD_MAP"
+colnames(df_UD_MAP) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of UD_MAP with UD_MAP, only correlations of CpG with UD_MAP now
+df_UD_MAP <- df_UD_MAP[-nrow(df_UD_MAP),]
+df_UD_MAP$qvalue <- p.adjust(df_UD_MAP$pval, method = "fdr")
+df_UD_MAP <- df_UD_MAP[order(abs(df_UD_MAP$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+
+cor.test(as.numeric(mat.Signaling["cg12075498_JAK1",]), as.numeric(cl_params5.w6$UD_MAP), method = "spearman") 
+cor.test(as.numeric(mat.Signaling["cg00502469_RASA3",]), as.numeric(cl_params5.w6$UD_MAP), method = "spearman") 
+
+
+library(dplyr)
+df_Signaling <- bind_rows(list(df_Proviral, df_SCA, df_CA_RNA, df_H3Ac,  df_Magnitude_HIVconsv,df_Breadth_HIVconsv, df_Magnitude_HIVtotal, df_Breadth_HIVtotal, df_VL_MAP, df_time_MAP, df_Time_on_cART_BCN02, df_VL_cART_initiation, df_HIV_tocART, df_UD_MAP))
+
+df_Signaling$module <- "signaling"
+
+write.table(df_Signaling, file = "../HeatmapMeth/df_Signaling_new.txt", sep = "\t")
+```
+
+```{r}
+Rebound2 <- rownames(mat.Signaling2)
+Late <- grep("A02|A05|A09|B13", Rebound2)
+Rebound2[Late] <- "Late"
+Rebound2[-Late] <- "Early"
+
+Rebound.col <- rownames(mat.Signaling2)
+Rebound.col[Late] <- "orange"
+Rebound.col[-Late] <- "blue"
+
+df_SCA.Signaling <- df_SCA[colnames(mat.Signaling2),]
+RhoSCA.Signaling <- df_SCA.Signaling$Rho
+
+df_Proviral.Signaling <- df_Proviral[colnames(mat.Signaling2),]
+RhoProviral.Signaling <- df_Proviral.Signaling$Rho
+
+df_CA_RNA.Signaling <- df_CA_RNA[colnames(mat.Signaling2),]
+RhoCA_RNA.Signaling <- df_CA_RNA.Signaling$Rho
+
+df_H3Ac.Signaling <- df_H3Ac[colnames(mat.Signaling2),]
+RhoH3Ac.Signaling <- df_H3Ac.Signaling$Rho
+
+
+df_Magnitude.Signaling <- df_Magnitude_HIVconsv[colnames(mat.Signaling2),]
+RhoMagnitude.Signaling <- df_Magnitude.Signaling$Rho
+
+df_Breadth.Signaling <- df_Breadth_HIVconsv[colnames(mat.Signaling2),]
+RhoBreadth.Signaling <- df_Breadth.Signaling$Rho
+
+
+df_MagnitudeHIVtotal.Signaling <- df_Magnitude_HIVtotal[colnames(mat.Signaling2),]
+RhoMagnitudeHIVtotal.Signaling <- df_MagnitudeHIVtotal.Signaling$Rho
+
+df_BreadthHIVtotal.Signaling <- df_Breadth_HIVtotal[colnames(mat.Signaling2),]
+RhoBreadthHIVtotal.Signaling <- df_BreadthHIVtotal.Signaling$Rho
+
+
+df_VL_MAP.Signaling <- df_VL_MAP[colnames(mat.Signaling2),]
+RhoVL_MAP.Signaling <- df_VL_MAP.Signaling$Rho
+
+df_time_MAP.Signaling <- df_time_MAP[colnames(mat.Signaling2),]
+Rhotime_MAP.Signaling <- df_time_MAP.Signaling$Rho
+
+df_Time_on_cART_BCN02.Signaling <- df_Time_on_cART_BCN02[colnames(mat.Signaling2),]
+RhoTime_on_cART_BCN02.Signaling <- df_Time_on_cART_BCN02.Signaling$Rho
+
+df_VL_cART_initiation.Signaling <- df_VL_cART_initiation[colnames(mat.Signaling2),]
+RhoVL_cART_initiation.Signaling <- df_VL_cART_initiation.Signaling$Rho
+
+df_HIV_tocART.Signaling <- df_HIV_tocART[colnames(mat.Signaling2),]
+RhoHIV_tocART.Signaling <- df_HIV_tocART.Signaling$Rho
+
+df_UD_MAP.Signaling <- df_UD_MAP[colnames(mat.Signaling2),]
+RhoUD_MAP.Signaling <- df_UD_MAP.Signaling$Rho
+
+
+column_ha = HeatmapAnnotation(Rebound = Rebound2, col = list(Rebound = c("Late" = "orange", "Early" = "blue")))
+
+col_fun = colorRamp2(c(-1, 0, 1), c("red", "white", "blue")) #Viral
+col_fun2 = colorRamp2(c(-1, 0, 1), c("pink", "white", "purple")) #ELISPOTdata
+col_fun3 = colorRamp2(c(-1, 0, 1), c("orange", "white", "brown")) #MAP data
+col_fun4 = colorRamp2(c(-1, 0, 1), c("grey", "white", "darkblue")) # BCN02 entry
+
+
+row_ha.Signaling = rowAnnotation(Proviral = RhoProviral.Signaling, SCA = RhoSCA.Signaling, CA_RNA = RhoCA_RNA.Signaling, H3Ac = RhoH3Ac.Signaling, Magnitude = RhoMagnitude.Signaling, Breadth = RhoBreadth.Signaling, Magnitude_HIVtotal = RhoMagnitudeHIVtotal.Signaling, Breadth_HIVtotal = RhoBreadthHIVtotal.Signaling, VL_MAP = RhoVL_MAP.Signaling, time = Rhotime_MAP.Signaling, time_cART_BCN02_entry = RhoTime_on_cART_BCN02.Signaling, VL_cART_initiation = RhoVL_cART_initiation.Signaling, HIV_tocART = RhoHIV_tocART.Signaling, UD_MAP = RhoUD_MAP.Signaling, col = list(Proviral = col_fun, SCA = col_fun, CA_RNA = col_fun, H3Ac = col_fun, Magnitude = col_fun2, Breadth = col_fun2,Magnitude_HIVtotal = col_fun2, Breadth_HIVtotal = col_fun2, VL_MAP =col_fun4, time = col_fun4, time_cART_BCN02_entry = col_fun3, VL_cART_initiation = col_fun3, HIV_tocART =col_fun3, UD_MAP = col_fun3))
+
+pdf("../HeatmapMeth/Signaling_Corrparams_new.pdf", height = 25, width = 15)
+
+Heatmap(t(mat.Signaling2), show_column_dend = FALSE,cluster_columns = FALSE,  col = colorRamp2(c(-2,2), c( c("red", "yellow"))),row_names_gp = gpar(fontsize = 7), height = unit(2.5, "mm")*nrow(t(mat.Signaling2)), top_annotation = column_ha, right_annotation = row_ha.Signaling)
+dev.off()
+
+
+
+```
+
+
+
+
+
+#CellMetabolism
+```{r}
+
+Metabolism <- unique(c(Genes_in_Module$Metabolism))
+Metabolism.df <- data.frame(Metabolism)
+length(Metabolism)# 2174
+
+library(gprofiler2)
+Metabolismconvert <- gconvert(query = as.character(Metabolism) , organism = "hsapiens",
+         target="UCSC", mthreshold = Inf, filter_na = TRUE)
+
+Metabolism.genes <- unique(c(Metabolismconvert$input, Metabolismconvert$name))
+
+
+#Genes associated with Metabolism response
+EvsLw6.Metabolism <- subset(Genes_EvsLw6.ok, Genes_EvsLw6.ok$Gene %in% Metabolism.genes) #1738
+length(unique(EvsLw6.Metabolism$Gene))#3
+
+
+```
+
+
+```{r}
+
+#Read DNAmet at w6
+CpGs_Metabolism <-paste0("^", as.character(EvsLw6.Metabolism$Row.names))
+CpGs_Metabolism_ok <-paste0(CpGs_Metabolism, collapse = "|")
+
+DNAMethyl1.Metabolism <- DNAMethyl1[grep(CpGs_Metabolism_ok, rownames(DNAMethyl1)), ]
+
+
+ann450.Metabolism <- ann450[rownames(DNAMethyl1.Metabolism),]
+df.Metabolism <- data.frame(rownames(ann450.Metabolism), rownames(DNAMethyl1.Metabolism))
+rownames(DNAMethyl1.Metabolism) <- ann450.Metabolism$CpG_Gene
+
+mat.Metabolism <- as.matrix(DNAMethyl1.Metabolism)
+colnames(mat.Metabolism) <- gsub(".w6", "" ,colnames(mat.Metabolism))
+mat.Metabolism <- mat.Metabolism[, c("B13", "A02", "A05", "A09", "A04", "B14", "B10", "B06", "A15", "A13", "A12", "B05")]
+
+Rebound2 <- colnames(mat.Metabolism )
+Late <- grep("A02|A05|A09|B13", Rebound2)
+Rebound2[Late] <- "orange"
+Rebound2[-Late] <- "blue"
+
+#Z-score
+mat.Metabolism2 <- scale(t(mat.Metabolism))
+
+Heatmap(t(mat.Metabolism2), show_column_dend = TRUE, cluster_columns = FALSE ,  col = colorRamp2(c(-2,2), c( c("red", "yellow"))))
+
+```
+
+
+
+#Correlations of Metabolism Genes. 
+
+```{r}
+
+cl_params <- read.csv("../../BCN02-INFO/ClincalandImmuneinfow6_viral.csv", header = TRUE, stringsAsFactors = FALSE)
+cl_params.w6 <- cl_params[,c(1, grep("w6", colnames(cl_params)))]
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params.w6) <- cl_params.w6$X
+colnames(cl_params.w6) <- c("patient", "Proviral", "SCA", "CA_RNA", "H3Ac")
+cl_params.w6 <- cl_params.w6[grep(paste0(colnames(mat.Metabolism), collapse = "|"), rownames(cl_params.w6)),]
+cl_params.w6 <- cl_params.w6[colnames(mat.Metabolism),]
+
+names.order <- data.frame(cl_params.w6$patient, colnames(mat.Metabolism))
+
+
+# Transpose beta values for selected cg --> Patients in rows now and cg probes in columns
+# there's no longer the name of the cg
+Data3.Metabolism <- t(mat.Metabolism)
+Data3.Metabolism[1:10, 1:10]
+dim(Data3.Metabolism)
+
+# Bind to Data 3 the values of Proviral
+Data3.Metabolism_Proviral <- cbind(Data3.Metabolism, cl_params.w6$Proviral)
+rownames(Data3.Metabolism_Proviral)
+colnames(Data3.Metabolism_Proviral) <- c(colnames(Data3.Metabolism), "Proviral")
+id2 <- colnames(Data3.Metabolism_Proviral)
+Data3.Metabolism_Proviral <- apply(Data3.Metabolism_Proviral, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Proviral
+library(Hmisc)
+res_corrProviral <- rcorr(Data3.Metabolism_Proviral,type="spearman") #Correlation between columns
+mat_corrProviral <- res_corrProviral$r
+pval_corrProviral <- res_corrProviral$P
+
+#Select all the correlations with Proviral
+df_Proviral <- data.frame(mat_corrProviral[nrow(mat_corrProviral),], pval_corrProviral[nrow(pval_corrProviral),])
+
+df_Proviral$Name <- c(rownames(df_Proviral))
+df_Proviral$class <- "Proviral"
+colnames(df_Proviral) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Proviral with Proviral, only correlations of CpG with Proviral now
+df_Proviral <- df_Proviral[-nrow(df_Proviral),]
+df_Proviral$qvalue <- p.adjust(df_Proviral$pval, method = "fdr")
+df_Proviral <- df_Proviral[order(abs(df_Proviral$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.Metabolism["cg01188578_HADHA",]), as.numeric(cl_params.w6$Proviral), method = "spearman") 
+cor.test(as.numeric(mat.Metabolism["cg22466012_PLD1",]), as.numeric(cl_params.w6$Proviral), method = "spearman")
+
+
+#SCA
+Data3.Metabolism_SCA <- cbind(Data3.Metabolism, cl_params.w6$SCA)
+rownames(Data3.Metabolism_SCA)
+id2 <- colnames(Data3.Metabolism_SCA)
+Data3.Metabolism_SCA <- apply(Data3.Metabolism_SCA, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with SCA
+library(Hmisc)
+res_corrSCA <- rcorr(Data3.Metabolism_SCA,type="spearman") #Correlation between columns
+mat_corrSCA <- res_corrSCA$r
+pval_corrSCA <- res_corrSCA$P
+
+#Select all the correlations with SCA
+df_SCA <- data.frame(mat_corrSCA[nrow(mat_corrSCA),], pval_corrSCA[nrow(pval_corrSCA),])
+
+df_SCA$Name <- c(rownames(df_SCA))
+df_SCA$class <- "SCA"
+colnames(df_SCA) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of SCA with SCA, only correlations of CpG with SCA now
+df_SCA <- df_SCA[-nrow(df_SCA),]
+df_SCA$qvalue <- p.adjust(df_SCA$pval, method = "fdr")
+df_SCA <- df_SCA[order(abs(df_SCA$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+
+cor.test(as.numeric(mat.Metabolism["cg01188578_HADHA",]), as.numeric(cl_params.w6$SCA), method = "spearman") 
+cor.test(as.numeric(mat.Metabolism["cg22466012_PLD1",]), as.numeric(cl_params.w6$SCA), method = "spearman")
+
+#CA-RNA
+Data3.Metabolism_CA_RNA <- cbind(Data3.Metabolism, cl_params.w6$CA_RNA)
+rownames(Data3.Metabolism_CA_RNA)
+id2 <- colnames(Data3.Metabolism_CA_RNA)
+Data3.Metabolism_CA_RNA <- apply(Data3.Metabolism_CA_RNA, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with CA_RNA
+library(Hmisc)
+res_corrCA_RNA <- rcorr(Data3.Metabolism_CA_RNA,type="spearman") #Correlation between columns
+mat_corrCA_RNA <- res_corrCA_RNA$r
+pval_corrCA_RNA <- res_corrCA_RNA$P
+
+#Select all the correlations with CA_RNA
+df_CA_RNA <- data.frame(mat_corrCA_RNA[nrow(mat_corrCA_RNA),], pval_corrCA_RNA[nrow(pval_corrCA_RNA),])
+
+df_CA_RNA$Name <- c(rownames(df_CA_RNA))
+df_CA_RNA$class <- "CA_RNA"
+colnames(df_CA_RNA) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of CA_RNA with CA_RNA, only correlations of CpG with CA_RNA now
+df_CA_RNA <- df_CA_RNA[-nrow(df_CA_RNA),]
+df_CA_RNA$qvalue <- p.adjust(df_CA_RNA$pval, method = "fdr")
+df_CA_RNA <- df_CA_RNA[order(abs(df_CA_RNA$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+
+
+cor.test(as.numeric(mat.Metabolism["cg01188578_HADHA",]), as.numeric(cl_params.w6$CA_RNA), method = "spearman") 
+cor.test(as.numeric(mat.Metabolism["cg22466012_PLD1",]), as.numeric(cl_params.w6$CA_RNA), method = "spearman")
+
+
+#H3Ac
+Data3.Metabolism_H3Ac <- cbind(Data3.Metabolism, cl_params.w6$H3Ac)
+rownames(Data3.Metabolism_H3Ac)
+id2 <- colnames(Data3.Metabolism_H3Ac)
+Data3.Metabolism_H3Ac <- apply(Data3.Metabolism_H3Ac, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with H3Ac
+library(Hmisc)
+res_corrH3Ac <- rcorr(Data3.Metabolism_H3Ac,type="spearman") #Correlation between columns
+mat_corrH3Ac <- res_corrH3Ac$r
+pval_corrH3Ac <- res_corrH3Ac$P
+
+#Select all the correlations with H3Ac
+df_H3Ac <- data.frame(mat_corrH3Ac[nrow(mat_corrH3Ac),], pval_corrH3Ac[nrow(pval_corrH3Ac),])
+
+df_H3Ac$Name <- c(rownames(df_H3Ac))
+df_H3Ac$class <- "H3Ac"
+colnames(df_H3Ac) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of H3Ac with H3Ac, only correlations of CpG with H3Ac now
+df_H3Ac <- df_H3Ac[-nrow(df_H3Ac),]
+df_H3Ac$qvalue <- p.adjust(df_H3Ac$pval, method = "fdr")
+df_H3Ac <- df_H3Ac[order(abs(df_H3Ac$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+
+cor.test(as.numeric(mat.Metabolism["cg01188578_HADHA",]), as.numeric(cl_params.w6$H3Ac), method = "spearman") 
+cor.test(as.numeric(mat.Metabolism["cg22466012_PLD1",]), as.numeric(cl_params.w6$H3Ac), method = "spearman")
+
+
+
+#ELISPOT Data
+
+cl_params3.w6 <- read.csv("../../BCN02-INFO/ELISPOT._datacsv.csv", header = TRUE, stringsAsFactors = FALSE)
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params3.w6) <- cl_params3.w6$X
+colnames(cl_params3.w6) <- c("patient", "Magnitude_HIVconsv","Breadth_HIVconsv",
+                             "Magnitude_HIVtotal","Breadth_HIVtotal"  )
+cl_params3.w6 <- cl_params3.w6[grep(paste0(colnames(mat.Metabolism), collapse = "|"), rownames(cl_params3.w6)),]
+cl_params3.w6 <- cl_params3.w6[colnames(mat.Metabolism),]
+
+names.order <- data.frame(cl_params3.w6$patient, colnames(mat.Metabolism))
+
+
+# Bind to Data 3 the values of Magnitude_HIVconsv
+Data3.Metabolism_Magnitude_HIVconsv <- cbind(Data3.Metabolism, cl_params3.w6$Magnitude_HIVconsv)
+rownames(Data3.Metabolism_Magnitude_HIVconsv)
+colnames(Data3.Metabolism_Magnitude_HIVconsv) <- c(colnames(Data3.Metabolism), "Magnitude_HIVconsv")
+id2 <- colnames(Data3.Metabolism_Magnitude_HIVconsv)
+Data3.Metabolism_Magnitude_HIVconsv <- apply(Data3.Metabolism_Magnitude_HIVconsv, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Magnitude_HIVconsv
+library(Hmisc)
+res_corrMagnitude_HIVconsv <- rcorr(Data3.Metabolism_Magnitude_HIVconsv,type="spearman") #Correlation between columns
+mat_corrMagnitude_HIVconsv <- res_corrMagnitude_HIVconsv$r
+pval_corrMagnitude_HIVconsv <- res_corrMagnitude_HIVconsv$P
+
+#Select all the correlations with Magnitude_HIVconsv
+df_Magnitude_HIVconsv <- data.frame(mat_corrMagnitude_HIVconsv[nrow(mat_corrMagnitude_HIVconsv),], pval_corrMagnitude_HIVconsv[nrow(pval_corrMagnitude_HIVconsv),])
+
+df_Magnitude_HIVconsv$Name <- c(rownames(df_Magnitude_HIVconsv))
+df_Magnitude_HIVconsv$class <- "Magnitude_HIVconsv"
+colnames(df_Magnitude_HIVconsv) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Magnitude_HIVconsv with Magnitude_HIVconsv, only correlations of CpG with Magnitude_HIVconsv now
+df_Magnitude_HIVconsv <- df_Magnitude_HIVconsv[-nrow(df_Magnitude_HIVconsv),]
+df_Magnitude_HIVconsv$qvalue <- p.adjust(df_Magnitude_HIVconsv$pval, method = "fdr")
+df_Magnitude_HIVconsv <- df_Magnitude_HIVconsv[order(abs(df_Magnitude_HIVconsv$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.Metabolism["cg01188578_HADHA",]), as.numeric(cl_params3.w6$Magnitude_HIVconsv), method = "spearman") 
+cor.test(as.numeric(mat.Metabolism["cg22466012_PLD1",]), as.numeric(cl_params3.w6$Magnitude_HIVconsv), method = "spearman")
+
+
+
+# Bind to Data 3 the values of Breadth_HIVconsv
+Data3.Metabolism_Breadth_HIVconsv <- cbind(Data3.Metabolism, cl_params3.w6$Breadth_HIVconsv)
+rownames(Data3.Metabolism_Breadth_HIVconsv)
+colnames(Data3.Metabolism_Breadth_HIVconsv) <- c(colnames(Data3.Metabolism), "Breadth_HIVconsv")
+id2 <- colnames(Data3.Metabolism_Breadth_HIVconsv)
+Data3.Metabolism_Breadth_HIVconsv <- apply(Data3.Metabolism_Breadth_HIVconsv, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Breadth_HIVconsv
+library(Hmisc)
+res_corrBreadth_HIVconsv <- rcorr(Data3.Metabolism_Breadth_HIVconsv,type="spearman") #Correlation between columns
+mat_corrBreadth_HIVconsv <- res_corrBreadth_HIVconsv$r
+pval_corrBreadth_HIVconsv <- res_corrBreadth_HIVconsv$P
+
+#Select all the correlations with Breadth_HIVconsv
+df_Breadth_HIVconsv <- data.frame(mat_corrBreadth_HIVconsv[nrow(mat_corrBreadth_HIVconsv),], pval_corrBreadth_HIVconsv[nrow(pval_corrBreadth_HIVconsv),])
+
+df_Breadth_HIVconsv$Name <- c(rownames(df_Breadth_HIVconsv))
+df_Breadth_HIVconsv$class <- "Breadth_HIVconsv"
+colnames(df_Breadth_HIVconsv) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Breadth_HIVconsv with Breadth_HIVconsv, only correlations of CpG with Breadth_HIVconsv now
+df_Breadth_HIVconsv <- df_Breadth_HIVconsv[-nrow(df_Breadth_HIVconsv),]
+df_Breadth_HIVconsv$qvalue <- p.adjust(df_Breadth_HIVconsv$pval, method = "fdr")
+df_Breadth_HIVconsv <- df_Breadth_HIVconsv[order(abs(df_Breadth_HIVconsv$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.Metabolism["cg01188578_HADHA",]), as.numeric(cl_params3.w6$Breadth_HIVconsv), method = "spearman") 
+cor.test(as.numeric(mat.Metabolism["cg22466012_PLD1",]), as.numeric(cl_params3.w6$Breadth_HIVconsv), method = "spearman")
+
+
+
+
+# Bind to Data 3 the values of Magnitude_HIVtotal
+Data3.Metabolism_Magnitude_HIVtotal <- cbind(Data3.Metabolism, cl_params3.w6$Magnitude_HIVtotal)
+rownames(Data3.Metabolism_Magnitude_HIVtotal)
+colnames(Data3.Metabolism_Magnitude_HIVtotal) <- c(colnames(Data3.Metabolism), "Magnitude_HIVtotal")
+id2 <- colnames(Data3.Metabolism_Magnitude_HIVtotal)
+Data3.Metabolism_Magnitude_HIVtotal <- apply(Data3.Metabolism_Magnitude_HIVtotal, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Magnitude_HIVtotal
+library(Hmisc)
+res_corrMagnitude_HIVtotal <- rcorr(Data3.Metabolism_Magnitude_HIVtotal,type="spearman") #Correlation between columns
+mat_corrMagnitude_HIVtotal <- res_corrMagnitude_HIVtotal$r
+pval_corrMagnitude_HIVtotal <- res_corrMagnitude_HIVtotal$P
+
+#Select all the correlations with Magnitude_HIVtotal
+df_Magnitude_HIVtotal <- data.frame(mat_corrMagnitude_HIVtotal[nrow(mat_corrMagnitude_HIVtotal),], pval_corrMagnitude_HIVtotal[nrow(pval_corrMagnitude_HIVtotal),])
+
+df_Magnitude_HIVtotal$Name <- c(rownames(df_Magnitude_HIVtotal))
+df_Magnitude_HIVtotal$class <- "Magnitude_HIVtotal"
+colnames(df_Magnitude_HIVtotal) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Magnitude_HIVtotal with Magnitude_HIVtotal, only correlations of CpG with Magnitude_HIVtotal now
+df_Magnitude_HIVtotal <- df_Magnitude_HIVtotal[-nrow(df_Magnitude_HIVtotal),]
+df_Magnitude_HIVtotal$qvalue <- p.adjust(df_Magnitude_HIVtotal$pval, method = "fdr")
+df_Magnitude_HIVtotal <- df_Magnitude_HIVtotal[order(abs(df_Magnitude_HIVtotal$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.Metabolism["cg01188578_HADHA",]), as.numeric(cl_params3.w6$Magnitude_HIVtotal), method = "spearman") 
+cor.test(as.numeric(mat.Metabolism["cg22466012_PLD1",]), as.numeric(cl_params3.w6$Magnitude_HIVtotal), method = "spearman")
+
+
+
+# Bind to Data 3 the values of Breadth_HIVtotal
+Data3.Metabolism_Breadth_HIVtotal <- cbind(Data3.Metabolism, cl_params3.w6$Breadth_HIVtotal)
+rownames(Data3.Metabolism_Breadth_HIVtotal)
+colnames(Data3.Metabolism_Breadth_HIVtotal) <- c(colnames(Data3.Metabolism), "Breadth_HIVtotal")
+id2 <- colnames(Data3.Metabolism_Breadth_HIVtotal)
+Data3.Metabolism_Breadth_HIVtotal <- apply(Data3.Metabolism_Breadth_HIVtotal, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Breadth_HIVtotal
+library(Hmisc)
+res_corrBreadth_HIVtotal <- rcorr(Data3.Metabolism_Breadth_HIVtotal,type="spearman") #Correlation between columns
+mat_corrBreadth_HIVtotal <- res_corrBreadth_HIVtotal$r
+pval_corrBreadth_HIVtotal <- res_corrBreadth_HIVtotal$P
+
+#Select all the correlations with Breadth_HIVtotal
+df_Breadth_HIVtotal <- data.frame(mat_corrBreadth_HIVtotal[nrow(mat_corrBreadth_HIVtotal),], pval_corrBreadth_HIVtotal[nrow(pval_corrBreadth_HIVtotal),])
+
+df_Breadth_HIVtotal$Name <- c(rownames(df_Breadth_HIVtotal))
+df_Breadth_HIVtotal$class <- "Breadth_HIVtotal"
+colnames(df_Breadth_HIVtotal) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Breadth_HIVtotal with Breadth_HIVtotal, only correlations of CpG with Breadth_HIVtotal now
+df_Breadth_HIVtotal <- df_Breadth_HIVtotal[-nrow(df_Breadth_HIVtotal),]
+df_Breadth_HIVtotal$qvalue <- p.adjust(df_Breadth_HIVtotal$pval, method = "fdr")
+df_Breadth_HIVtotal <- df_Breadth_HIVtotal[order(abs(df_Breadth_HIVtotal$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.Metabolism["cg01188578_HADHA",]), as.numeric(cl_params3.w6$Breadth_HIVtotal), method = "spearman") 
+cor.test(as.numeric(mat.Metabolism["cg22466012_PLD1",]), as.numeric(cl_params3.w6$Breadth_HIVtotal), method = "spearman")
+
+
+#Data VL at day of cART ressumption and time to rebound. 
+
+
+cl_params4.w6 <- read.csv("../../BCN02-INFO/MAP_outcome.csv", header = TRUE, stringsAsFactors = FALSE)
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params4.w6) <- cl_params4.w6$PatientID
+colnames(cl_params4.w6) <- c("patient", "VL_MAP","time_MAP"  )
+cl_params4.w6 <- cl_params4.w6[grep(paste0(colnames(mat.Metabolism), collapse = "|"), rownames(cl_params4.w6)),]
+cl_params4.w6 <- cl_params4.w6[colnames(mat.Metabolism),]
+
+names.order <- data.frame(cl_params4.w6$patient, colnames(mat.Metabolism))
+
+
+# Bind to Data 3 the values of VL_MAP
+Data3.Metabolism_VL_MAP <- cbind(Data3.Metabolism, cl_params4.w6$VL_MAP)
+rownames(Data3.Metabolism_VL_MAP)
+colnames(Data3.Metabolism_VL_MAP) <- c(colnames(Data3.Metabolism), "VL_MAP")
+id2 <- colnames(Data3.Metabolism_VL_MAP)
+Data3.Metabolism_VL_MAP <- apply(Data3.Metabolism_VL_MAP, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with VL_MAP
+library(Hmisc)
+res_corrVL_MAP <- rcorr(Data3.Metabolism_VL_MAP,type="spearman") #Correlation between columns
+mat_corrVL_MAP <- res_corrVL_MAP$r
+pval_corrVL_MAP <- res_corrVL_MAP$P
+
+#Select all the correlations with VL_MAP
+df_VL_MAP <- data.frame(mat_corrVL_MAP[nrow(mat_corrVL_MAP),], pval_corrVL_MAP[nrow(pval_corrVL_MAP),])
+
+df_VL_MAP$Name <- c(rownames(df_VL_MAP))
+df_VL_MAP$class <- "VL_MAP"
+colnames(df_VL_MAP) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of VL_MAP with VL_MAP, only correlations of CpG with VL_MAP now
+df_VL_MAP <- df_VL_MAP[-nrow(df_VL_MAP),]
+df_VL_MAP$qvalue <- p.adjust(df_VL_MAP$pval, method = "fdr")
+df_VL_MAP <- df_VL_MAP[order(abs(df_VL_MAP$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.Metabolism["cg01188578_HADHA",]), as.numeric(cl_params4.w6$VL_MAP), method = "spearman") 
+cor.test(as.numeric(mat.Metabolism["cg22466012_PLD1",]), as.numeric(cl_params4.w6$VL_MAP), method = "spearman")
+
+
+
+# Bind to Data 3 the values of time_MAP
+Data3.Metabolism_time_MAP <- cbind(Data3.Metabolism, cl_params4.w6$time_MAP)
+rownames(Data3.Metabolism_time_MAP)
+colnames(Data3.Metabolism_time_MAP) <- c(colnames(Data3.Metabolism), "time_MAP")
+id2 <- colnames(Data3.Metabolism_time_MAP)
+Data3.Metabolism_time_MAP <- apply(Data3.Metabolism_time_MAP, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with time_MAP
+library(Hmisc)
+res_corrtime_MAP <- rcorr(Data3.Metabolism_time_MAP,type="spearman") #Correlation between columns
+mat_corrtime_MAP <- res_corrtime_MAP$r
+pval_corrtime_MAP <- res_corrtime_MAP$P
+
+#Select all the correlations with time_MAP
+df_time_MAP <- data.frame(mat_corrtime_MAP[nrow(mat_corrtime_MAP),], pval_corrtime_MAP[nrow(pval_corrtime_MAP),])
+
+df_time_MAP$Name <- c(rownames(df_time_MAP))
+df_time_MAP$class <- "time_MAP"
+colnames(df_time_MAP) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of time_MAP with time_MAP, only correlations of CpG with time_MAP now
+df_time_MAP <- df_time_MAP[-nrow(df_time_MAP),]
+df_time_MAP$qvalue <- p.adjust(df_time_MAP$pval, method = "fdr")
+df_time_MAP <- df_time_MAP[order(abs(df_time_MAP$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.Metabolism["cg01188578_HADHA",]), as.numeric(cl_params4.w6$time_MAP), method = "spearman") 
+cor.test(as.numeric(mat.Metabolism["cg22466012_PLD1",]), as.numeric(cl_params4.w6$time_MAP), method = "spearman")
+
+
+cl_params5.w6 <- read.csv("../../BCN02-INFO/preCART_info.csv", header = TRUE, stringsAsFactors = FALSE)
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params5.w6) <- cl_params5.w6$PatientID
+colnames(cl_params5.w6) <- c("patient", "Time_on_cART_BCN02", "VL_cART_initiation", "HIV_tocART", "UD_MAP" )
+cl_params5.w6 <- cl_params5.w6[grep(paste0(colnames(mat.Metabolism), collapse = "|"), rownames(cl_params5.w6)),]
+cl_params5.w6 <- cl_params5.w6[colnames(mat.Metabolism),]
+
+names.order <- data.frame(cl_params5.w6$patient, colnames(mat.Metabolism))
+
+
+# Bind to Data 3 the values of Time_on_cART_BCN02
+Data3.Metabolism_Time_on_cART_BCN02 <- cbind(Data3.Metabolism, cl_params5.w6$Time_on_cART_BCN02)
+rownames(Data3.Metabolism_Time_on_cART_BCN02)
+colnames(Data3.Metabolism_Time_on_cART_BCN02) <- c(colnames(Data3.Metabolism), "Time_on_cART_BCN02")
+id2 <- colnames(Data3.Metabolism_Time_on_cART_BCN02)
+Data3.Metabolism_Time_on_cART_BCN02 <- apply(Data3.Metabolism_Time_on_cART_BCN02, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Time_on_cART_BCN02
+library(Hmisc)
+res_corrTime_on_cART_BCN02 <- rcorr(Data3.Metabolism_Time_on_cART_BCN02,type="spearman") #Correlation between columns
+mat_corrTime_on_cART_BCN02 <- res_corrTime_on_cART_BCN02$r
+pval_corrTime_on_cART_BCN02 <- res_corrTime_on_cART_BCN02$P
+
+#Select all the correlations with Time_on_cART_BCN02
+df_Time_on_cART_BCN02 <- data.frame(mat_corrTime_on_cART_BCN02[nrow(mat_corrTime_on_cART_BCN02),], pval_corrTime_on_cART_BCN02[nrow(pval_corrTime_on_cART_BCN02),])
+
+df_Time_on_cART_BCN02$Name <- c(rownames(df_Time_on_cART_BCN02))
+df_Time_on_cART_BCN02$class <- "Time_on_cART_BCN02"
+colnames(df_Time_on_cART_BCN02) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Time_on_cART_BCN02 with Time_on_cART_BCN02, only correlations of CpG with Time_on_cART_BCN02 now
+df_Time_on_cART_BCN02 <- df_Time_on_cART_BCN02[-nrow(df_Time_on_cART_BCN02),]
+df_Time_on_cART_BCN02$qvalue <- p.adjust(df_Time_on_cART_BCN02$pval, method = "fdr")
+df_Time_on_cART_BCN02 <- df_Time_on_cART_BCN02[order(abs(df_Time_on_cART_BCN02$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.Metabolism["cg01188578_HADHA",]), as.numeric(cl_params5.w6$Time_on_cART_BCN02), method = "spearman") 
+cor.test(as.numeric(mat.Metabolism["cg22466012_PLD1",]), as.numeric(cl_params5.w6$Time_on_cART_BCN02), method = "spearman")
+
+
+
+# Bind to Data 3 the values of VL_cART_initiation
+Data3.Metabolism_VL_cART_initiation <- cbind(Data3.Metabolism, cl_params5.w6$VL_cART_initiation)
+rownames(Data3.Metabolism_VL_cART_initiation)
+colnames(Data3.Metabolism_VL_cART_initiation) <- c(colnames(Data3.Metabolism), "VL_cART_initiation")
+id2 <- colnames(Data3.Metabolism_VL_cART_initiation)
+Data3.Metabolism_VL_cART_initiation <- apply(Data3.Metabolism_VL_cART_initiation, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with VL_cART_initiation
+library(Hmisc)
+res_corrVL_cART_initiation <- rcorr(Data3.Metabolism_VL_cART_initiation,type="spearman") #Correlation between columns
+mat_corrVL_cART_initiation <- res_corrVL_cART_initiation$r
+pval_corrVL_cART_initiation <- res_corrVL_cART_initiation$P
+
+#Select all the correlations with VL_cART_initiation
+df_VL_cART_initiation <- data.frame(mat_corrVL_cART_initiation[nrow(mat_corrVL_cART_initiation),], pval_corrVL_cART_initiation[nrow(pval_corrVL_cART_initiation),])
+
+df_VL_cART_initiation$Name <- c(rownames(df_VL_cART_initiation))
+df_VL_cART_initiation$class <- "VL_cART_initiation"
+colnames(df_VL_cART_initiation) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of VL_cART_initiation with VL_cART_initiation, only correlations of CpG with VL_cART_initiation now
+df_VL_cART_initiation <- df_VL_cART_initiation[-nrow(df_VL_cART_initiation),]
+df_VL_cART_initiation$qvalue <- p.adjust(df_VL_cART_initiation$pval, method = "fdr")
+df_VL_cART_initiation <- df_VL_cART_initiation[order(abs(df_VL_cART_initiation$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.Metabolism["cg01188578_HADHA",]), as.numeric(cl_params5.w6$VL_cART_initiation), method = "spearman") 
+cor.test(as.numeric(mat.Metabolism["cg22466012_PLD1",]), as.numeric(cl_params5.w6$VL_cART_initiation), method = "spearman")
+
+
+
+# Bind to Data 3 the values of HIV_tocART
+Data3.Metabolism_HIV_tocART <- cbind(Data3.Metabolism, cl_params5.w6$HIV_tocART)
+rownames(Data3.Metabolism_HIV_tocART)
+colnames(Data3.Metabolism_HIV_tocART) <- c(colnames(Data3.Metabolism), "HIV_tocART")
+id2 <- colnames(Data3.Metabolism_HIV_tocART)
+Data3.Metabolism_HIV_tocART <- apply(Data3.Metabolism_HIV_tocART, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with HIV_tocART
+library(Hmisc)
+res_corrHIV_tocART <- rcorr(Data3.Metabolism_HIV_tocART,type="spearman") #Correlation between columns
+mat_corrHIV_tocART <- res_corrHIV_tocART$r
+pval_corrHIV_tocART <- res_corrHIV_tocART$P
+
+#Select all the correlations with HIV_tocART
+df_HIV_tocART <- data.frame(mat_corrHIV_tocART[nrow(mat_corrHIV_tocART),], pval_corrHIV_tocART[nrow(pval_corrHIV_tocART),])
+
+df_HIV_tocART$Name <- c(rownames(df_HIV_tocART))
+df_HIV_tocART$class <- "HIV_tocART"
+colnames(df_HIV_tocART) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of HIV_tocART with HIV_tocART, only correlations of CpG with HIV_tocART now
+df_HIV_tocART <- df_HIV_tocART[-nrow(df_HIV_tocART),]
+df_HIV_tocART$qvalue <- p.adjust(df_HIV_tocART$pval, method = "fdr")
+df_HIV_tocART <- df_HIV_tocART[order(abs(df_HIV_tocART$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.Metabolism["cg01188578_HADHA",]), as.numeric(cl_params5.w6$HIV_tocART), method = "spearman") 
+cor.test(as.numeric(mat.Metabolism["cg22466012_PLD1",]), as.numeric(cl_params5.w6$HIV_tocART), method = "spearman")
+
+
+# Bind to Data 3 the values of UD_MAP
+Data3.Metabolism_UD_MAP <- cbind(Data3.Metabolism, cl_params5.w6$UD_MAP)
+rownames(Data3.Metabolism_UD_MAP)
+colnames(Data3.Metabolism_UD_MAP) <- c(colnames(Data3.Metabolism), "UD_MAP")
+id2 <- colnames(Data3.Metabolism_UD_MAP)
+Data3.Metabolism_UD_MAP <- apply(Data3.Metabolism_UD_MAP, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with UD_MAP
+library(Hmisc)
+res_corrUD_MAP <- rcorr(Data3.Metabolism_UD_MAP,type="spearman") #Correlation between columns
+mat_corrUD_MAP <- res_corrUD_MAP$r
+pval_corrUD_MAP <- res_corrUD_MAP$P
+
+#Select all the correlations with UD_MAP
+df_UD_MAP <- data.frame(mat_corrUD_MAP[nrow(mat_corrUD_MAP),], pval_corrUD_MAP[nrow(pval_corrUD_MAP),])
+
+df_UD_MAP$Name <- c(rownames(df_UD_MAP))
+df_UD_MAP$class <- "UD_MAP"
+colnames(df_UD_MAP) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of UD_MAP with UD_MAP, only correlations of CpG with UD_MAP now
+df_UD_MAP <- df_UD_MAP[-nrow(df_UD_MAP),]
+df_UD_MAP$qvalue <- p.adjust(df_UD_MAP$pval, method = "fdr")
+df_UD_MAP <- df_UD_MAP[order(abs(df_UD_MAP$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.Metabolism["cg01188578_HADHA",]), as.numeric(cl_params5.w6$UD_MAP), method = "spearman") 
+cor.test(as.numeric(mat.Metabolism["cg22466012_PLD1",]), as.numeric(cl_params5.w6$UD_MAP), method = "spearman")
+
+ library(dplyr)
+ df_Metabolism <- bind_rows(list(df_Proviral, df_SCA, df_CA_RNA, df_H3Ac,  df_Magnitude_HIVconsv,df_Breadth_HIVconsv, df_Magnitude_HIVtotal, df_Breadth_HIVtotal, df_VL_MAP, df_time_MAP, df_Time_on_cART_BCN02, df_VL_cART_initiation, df_HIV_tocART, df_UD_MAP))
+ 
+df_Metabolism$module <- "Metabolism"
+
+write.table(df_Metabolism, file = "../HeatmapMeth/df_Metabolism_new.txt", sep = "\t")
+```
+
+```{r}
+Rebound2 <- rownames(mat.Metabolism2)
+Late <- grep("A02|A05|A09|B13", Rebound2)
+Rebound2[Late] <- "Late"
+Rebound2[-Late] <- "Early"
+
+Rebound.col <- rownames(mat.Metabolism2)
+Rebound.col[Late] <- "orange"
+Rebound.col[-Late] <- "blue"
+
+df_SCA.Metabolism <- df_SCA[colnames(mat.Metabolism2),]
+RhoSCA.Metabolism <- df_SCA.Metabolism$Rho
+
+df_Proviral.Metabolism <- df_Proviral[colnames(mat.Metabolism2),]
+RhoProviral.Metabolism <- df_Proviral.Metabolism$Rho
+
+df_CA_RNA.Metabolism <- df_CA_RNA[colnames(mat.Metabolism2),]
+RhoCA_RNA.Metabolism <- df_CA_RNA.Metabolism$Rho
+
+df_H3Ac.Metabolism <- df_H3Ac[colnames(mat.Metabolism2),]
+RhoH3Ac.Metabolism <- df_H3Ac.Metabolism$Rho
+
+
+df_Magnitude.Metabolism <- df_Magnitude_HIVconsv[colnames(mat.Metabolism2),]
+RhoMagnitude.Metabolism <- df_Magnitude.Metabolism$Rho
+
+df_Breadth.Metabolism <- df_Breadth_HIVconsv[colnames(mat.Metabolism2),]
+RhoBreadth.Metabolism <- df_Breadth.Metabolism$Rho
+
+
+df_MagnitudeHIVtotal.Metabolism <- df_Magnitude_HIVtotal[colnames(mat.Metabolism2),]
+RhoMagnitudeHIVtotal.Metabolism <- df_MagnitudeHIVtotal.Metabolism$Rho
+
+df_BreadthHIVtotal.Metabolism <- df_Breadth_HIVtotal[colnames(mat.Metabolism2),]
+RhoBreadthHIVtotal.Metabolism <- df_BreadthHIVtotal.Metabolism$Rho
+
+
+df_VL_MAP.Metabolism <- df_VL_MAP[colnames(mat.Metabolism2),]
+RhoVL_MAP.Metabolism <- df_VL_MAP.Metabolism$Rho
+
+df_time_MAP.Metabolism <- df_time_MAP[colnames(mat.Metabolism2),]
+Rhotime_MAP.Metabolism <- df_time_MAP.Metabolism$Rho
+
+df_Time_on_cART_BCN02.Metabolism <- df_Time_on_cART_BCN02[colnames(mat.Metabolism2),]
+RhoTime_on_cART_BCN02.Metabolism <- df_Time_on_cART_BCN02.Metabolism$Rho
+
+df_VL_cART_initiation.Metabolism <- df_VL_cART_initiation[colnames(mat.Metabolism2),]
+RhoVL_cART_initiation.Metabolism <- df_VL_cART_initiation.Metabolism$Rho
+
+df_HIV_tocART.Metabolism <- df_HIV_tocART[colnames(mat.Metabolism2),]
+RhoHIV_tocART.Metabolism <- df_HIV_tocART.Metabolism$Rho
+
+df_UD_MAP.Metabolism <- df_UD_MAP[colnames(mat.Metabolism2),]
+RhoUD_MAP.Metabolism <- df_UD_MAP.Metabolism$Rho
+
+
+column_ha = HeatmapAnnotation(Rebound = Rebound2, col = list(Rebound = c("Late" = "orange", "Early" = "blue")))
+
+col_fun = colorRamp2(c(-1, 0, 1), c("red", "white", "blue")) #Viral
+col_fun1 = colorRamp2(c(-1, 0, 1), c("green", "white", "yellow")) #ICS
+col_fun2 = colorRamp2(c(-1, 0, 1), c("pink", "white", "purple")) #ELISPOTdata
+col_fun3 = colorRamp2(c(-1, 0, 1), c("orange", "white", "brown")) #
+col_fun4 = colorRamp2(c(-1, 0, 1), c("grey", "white", "darkblue")) # MAP data
+
+
+row_ha.Metabolism = rowAnnotation(Proviral = RhoProviral.Metabolism, SCA = RhoSCA.Metabolism, CA_RNA = RhoCA_RNA.Metabolism, H3Ac = RhoH3Ac.Metabolism,  Magnitude = RhoMagnitude.Metabolism, Breadth = RhoBreadth.Metabolism, Magnitude_HIVtotal = RhoMagnitudeHIVtotal.Metabolism, Breadth_HIVtotal = RhoBreadthHIVtotal.Metabolism, VL_MAP = RhoVL_MAP.Metabolism, time = Rhotime_MAP.Metabolism, time_cART_BCN02_entry = RhoTime_on_cART_BCN02.Metabolism, VL_cART_initiation = RhoVL_cART_initiation.Metabolism, HIV_tocART = RhoHIV_tocART.Metabolism, UD_MAP = RhoUD_MAP.Metabolism, col = list(Proviral = col_fun, SCA = col_fun, CA_RNA = col_fun, H3Ac = col_fun,  Magnitude = col_fun2, Breadth = col_fun2,Magnitude_HIVtotal = col_fun2, Breadth_HIVtotal = col_fun2, VL_MAP =col_fun4, time = col_fun4, time_cART_BCN02_entry = col_fun3, VL_cART_initiation = col_fun3, HIV_tocART =col_fun3, UD_MAP = col_fun3))
+
+
+Heatmap(t(mat.Metabolism2), show_column_dend = FALSE,cluster_columns = FALSE,  col = colorRamp2(c(-2,2), c( c("red", "yellow"))),row_names_gp = gpar(fontsize = 7), height = unit(2.5, "mm")*nrow(t(mat.Metabolism2)), top_annotation = column_ha, right_annotation = row_ha.Metabolism)
+
+pdf("../HeatmapMeth/Metabolism_Corrparams_new.pdf", height = 25, width = 15)
+
+Heatmap(t(mat.Metabolism2), show_column_dend = FALSE,cluster_columns = FALSE,  col = colorRamp2(c(-2,2), c( c("red", "yellow"))),row_names_gp = gpar(fontsize = 7), height = unit(2.5, "mm")*nrow(t(mat.Metabolism2)), top_annotation = column_ha, right_annotation = row_ha.Metabolism)
+dev.off()
+
+
+
+```
+
+
+
+
+
+#Cellcellcycle
+```{r}
+
+cellcycle <- unique(c(Genes_in_Module$`Cell cycle`))
+cellcycle.df <- data.frame(cellcycle)
+length(cellcycle)# 2174
+
+library(gprofiler2)
+cellcycleconvert <- gconvert(query = as.character(cellcycle) , organism = "hsapiens",
+         target="UCSC", mthreshold = Inf, filter_na = TRUE)
+
+cellcycle.genes <- unique(c(cellcycleconvert$input, cellcycleconvert$name))
+
+
+#Genes associated with cellcycle response
+EvsLw6.cellcycle <- subset(Genes_EvsLw6.ok, Genes_EvsLw6.ok$Gene %in% cellcycle.genes) #1738
+length(unique(EvsLw6.cellcycle$Gene))#27
+
+```
+
+
+
+```{r}
+#Read DNAmet at w6
+CpGs_cellcycle <-paste0("^", as.character(EvsLw6.cellcycle$Row.names))
+CpGs_cellcycle_ok <-paste0(CpGs_cellcycle, collapse = "|")
+
+DNAMethyl1.cellcycle <- DNAMethyl1[grep(CpGs_cellcycle_ok, rownames(DNAMethyl1)), ]
+ann450.cellcycle <- ann450[rownames(DNAMethyl1.cellcycle),]
+df.cellcycle <- data.frame(rownames(ann450.cellcycle), rownames(DNAMethyl1.cellcycle))
+rownames(DNAMethyl1.cellcycle) <- ann450.cellcycle$CpG_Gene
+
+library(ComplexHeatmap)
+library(circlize)
+
+mat.cellcycle <- as.matrix(DNAMethyl1.cellcycle)
+colnames(mat.cellcycle) <- gsub(".w6", "" ,colnames(mat.cellcycle))
+mat.cellcycle <- mat.cellcycle[, c("B13", "A02", "A05", "A09", "A04", "B14", "B10", "B06", "A15", "A13", "A12", "B05")]
+
+Rebound2 <- colnames(mat.cellcycle )
+Late <- grep("A02|A05|A09|B13", Rebound2)
+Rebound2[Late] <- "orange"
+Rebound2[-Late] <- "blue"
+
+#Z-score
+mat.cellcycle2 <- scale(t(mat.cellcycle))
+
+Heatmap(t(mat.cellcycle2), show_column_dend = FALSE, cluster_columns = FALSE, col = colorRamp2(c(-2,2), c( c("red", "yellow"))))
+
+```
+
+
+#Correlations of cellcycle Genes. 
+
+```{r}
+cl_params <- read.csv("../../BCN02-INFO/ClincalandImmuneinfow6_viral.csv", header = TRUE, stringsAsFactors = FALSE)
+cl_params.w6 <- cl_params[,c(1, grep("w6", colnames(cl_params)))]
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params.w6) <- cl_params.w6$X
+colnames(cl_params.w6) <- c("patient", "Proviral", "SCA", "CA_RNA", "H3Ac")
+cl_params.w6 <- cl_params.w6[grep(paste0(colnames(mat.cellcycle), collapse = "|"), rownames(cl_params.w6)),]
+cl_params.w6 <- cl_params.w6[colnames(mat.cellcycle),]
+
+names.order <- data.frame(cl_params.w6$patient, colnames(mat.cellcycle))
+
+
+# Transpose beta values for selected cg --> Patients in rows now and cg probes in columns
+# there's no longer the name of the cg
+Data.cellcyle <- t(mat.cellcycle)
+Data.cellcyle[1:10, 1:10]
+dim(Data.cellcyle)
+
+# Bind to Data 3 the values of Proviral
+Data.cellcyle_Proviral <- cbind(Data.cellcyle, cl_params.w6$Proviral)
+rownames(Data.cellcyle_Proviral)
+colnames(Data.cellcyle_Proviral) <- c(colnames(Data.cellcyle), "Proviral")
+id2 <- colnames(Data.cellcyle_Proviral)
+Data.cellcyle_Proviral <- apply(Data.cellcyle_Proviral, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Proviral
+library(Hmisc)
+res_corrProviral <- rcorr(Data.cellcyle_Proviral,type="spearman") #Correlation between columns
+mat_corrProviral <- res_corrProviral$r
+pval_corrProviral <- res_corrProviral$P
+
+#Select all the correlations with Proviral
+df_Proviral <- data.frame(mat_corrProviral[nrow(mat_corrProviral),], pval_corrProviral[nrow(pval_corrProviral),])
+
+df_Proviral$Name <- c(rownames(df_Proviral))
+df_Proviral$class <- "Proviral"
+colnames(df_Proviral) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Proviral with Proviral, only correlations of CpG with Proviral now
+df_Proviral <- df_Proviral[-nrow(df_Proviral),]
+df_Proviral$qvalue <- p.adjust(df_Proviral$pval, method = "fdr")
+df_Proviral <- df_Proviral[order(abs(df_Proviral$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.cellcycle["cg02585483_KIF2A",]), as.numeric(cl_params.w6$Proviral), method = "spearman")
+cor.test(as.numeric(mat.cellcycle["cg12286158_DMC1",]), as.numeric(cl_params.w6$Proviral), method = "spearman") 
+
+
+#SCA
+Data.cellcyle_SCA <- cbind(Data.cellcyle, cl_params.w6$SCA)
+rownames(Data.cellcyle_SCA)
+id2 <- colnames(Data.cellcyle_SCA)
+Data.cellcyle_SCA <- apply(Data.cellcyle_SCA, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with SCA
+library(Hmisc)
+res_corrSCA <- rcorr(Data.cellcyle_SCA,type="spearman") #Correlation between columns
+mat_corrSCA <- res_corrSCA$r
+pval_corrSCA <- res_corrSCA$P
+
+#Select all the correlations with SCA
+df_SCA <- data.frame(mat_corrSCA[nrow(mat_corrSCA),], pval_corrSCA[nrow(pval_corrSCA),])
+
+df_SCA$Name <- c(rownames(df_SCA))
+df_SCA$class <- "SCA"
+colnames(df_SCA) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of SCA with SCA, only correlations of CpG with SCA now
+df_SCA <- df_SCA[-nrow(df_SCA),]
+df_SCA$qvalue <- p.adjust(df_SCA$pval, method = "fdr")
+df_SCA <- df_SCA[order(abs(df_SCA$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.cellcycle["cg02585483_KIF2A",]), as.numeric(cl_params.w6$SCA), method = "spearman")
+cor.test(as.numeric(mat.cellcycle["cg12286158_DMC1",]), as.numeric(cl_params.w6$SCA), method = "spearman") 
+
+
+#CA-RNA
+Data.cellcyle_CA_RNA <- cbind(Data.cellcyle, cl_params.w6$CA_RNA)
+rownames(Data.cellcyle_CA_RNA)
+id2 <- colnames(Data.cellcyle_CA_RNA)
+Data.cellcyle_CA_RNA <- apply(Data.cellcyle_CA_RNA, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with CA_RNA
+library(Hmisc)
+res_corrCA_RNA <- rcorr(Data.cellcyle_CA_RNA,type="spearman") #Correlation between columns
+mat_corrCA_RNA <- res_corrCA_RNA$r
+pval_corrCA_RNA <- res_corrCA_RNA$P
+
+#Select all the correlations with CA_RNA
+df_CA_RNA <- data.frame(mat_corrCA_RNA[nrow(mat_corrCA_RNA),], pval_corrCA_RNA[nrow(pval_corrCA_RNA),])
+
+df_CA_RNA$Name <- c(rownames(df_CA_RNA))
+df_CA_RNA$class <- "CA_RNA"
+colnames(df_CA_RNA) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of CA_RNA with CA_RNA, only correlations of CpG with CA_RNA now
+df_CA_RNA <- df_CA_RNA[-nrow(df_CA_RNA),]
+df_CA_RNA$qvalue <- p.adjust(df_CA_RNA$pval, method = "fdr")
+df_CA_RNA <- df_CA_RNA[order(abs(df_CA_RNA$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.cellcycle["cg02585483_KIF2A",]), as.numeric(cl_params.w6$CA_RNA), method = "spearman")
+cor.test(as.numeric(mat.cellcycle["cg12286158_DMC1",]), as.numeric(cl_params.w6$CA_RNA), method = "spearman") 
+
+
+#H3Ac
+Data.cellcyle_H3Ac <- cbind(Data.cellcyle, cl_params.w6$H3Ac)
+rownames(Data.cellcyle_H3Ac)
+id2 <- colnames(Data.cellcyle_H3Ac)
+Data.cellcyle_H3Ac <- apply(Data.cellcyle_H3Ac, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with H3Ac
+library(Hmisc)
+res_corrH3Ac <- rcorr(Data.cellcyle_H3Ac,type="spearman") #Correlation between columns
+mat_corrH3Ac <- res_corrH3Ac$r
+pval_corrH3Ac <- res_corrH3Ac$P
+
+#Select all the correlations with H3Ac
+df_H3Ac <- data.frame(mat_corrH3Ac[nrow(mat_corrH3Ac),], pval_corrH3Ac[nrow(pval_corrH3Ac),])
+
+df_H3Ac$Name <- c(rownames(df_H3Ac))
+df_H3Ac$class <- "H3Ac"
+colnames(df_H3Ac) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of H3Ac with H3Ac, only correlations of CpG with H3Ac now
+df_H3Ac <- df_H3Ac[-nrow(df_H3Ac),]
+df_H3Ac$qvalue <- p.adjust(df_H3Ac$pval, method = "fdr")
+df_H3Ac <- df_H3Ac[order(abs(df_H3Ac$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.cellcycle["cg02585483_KIF2A",]), as.numeric(cl_params.w6$H3Ac), method = "spearman")
+cor.test(as.numeric(mat.cellcycle["cg12286158_DMC1",]), as.numeric(cl_params.w6$H3Ac), method = "spearman") 
+
+
+#ELISPOT Data
+
+cl_params3.w6 <- read.csv("../../BCN02-INFO/ELISPOT._datacsv.csv", header = TRUE, stringsAsFactors = FALSE)
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params3.w6) <- cl_params3.w6$X
+colnames(cl_params3.w6) <- c("patient", "Magnitude_HIVconsv","Breadth_HIVconsv",
+                             "Magnitude_HIVtotal","Breadth_HIVtotal"  )
+cl_params3.w6 <- cl_params3.w6[grep(paste0(colnames(mat.cellcycle), collapse = "|"), rownames(cl_params3.w6)),]
+cl_params3.w6 <- cl_params3.w6[colnames(mat.cellcycle),]
+
+names.order <- data.frame(cl_params3.w6$patient, colnames(mat.cellcycle))
+
+
+# Bind to Data 3 the values of Magnitude_HIVconsv
+Data.cellcyle_Magnitude_HIVconsv <- cbind(Data.cellcyle, cl_params3.w6$Magnitude_HIVconsv)
+rownames(Data.cellcyle_Magnitude_HIVconsv)
+colnames(Data.cellcyle_Magnitude_HIVconsv) <- c(colnames(Data.cellcyle), "Magnitude_HIVconsv")
+id2 <- colnames(Data.cellcyle_Magnitude_HIVconsv)
+Data.cellcyle_Magnitude_HIVconsv <- apply(Data.cellcyle_Magnitude_HIVconsv, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Magnitude_HIVconsv
+library(Hmisc)
+res_corrMagnitude_HIVconsv <- rcorr(Data.cellcyle_Magnitude_HIVconsv,type="spearman") #Correlation between columns
+mat_corrMagnitude_HIVconsv <- res_corrMagnitude_HIVconsv$r
+pval_corrMagnitude_HIVconsv <- res_corrMagnitude_HIVconsv$P
+
+#Select all the correlations with Magnitude_HIVconsv
+df_Magnitude_HIVconsv <- data.frame(mat_corrMagnitude_HIVconsv[nrow(mat_corrMagnitude_HIVconsv),], pval_corrMagnitude_HIVconsv[nrow(pval_corrMagnitude_HIVconsv),])
+
+df_Magnitude_HIVconsv$Name <- c(rownames(df_Magnitude_HIVconsv))
+df_Magnitude_HIVconsv$class <- "Magnitude_HIVconsv"
+colnames(df_Magnitude_HIVconsv) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Magnitude_HIVconsv with Magnitude_HIVconsv, only correlations of CpG with Magnitude_HIVconsv now
+df_Magnitude_HIVconsv <- df_Magnitude_HIVconsv[-nrow(df_Magnitude_HIVconsv),]
+df_Magnitude_HIVconsv$qvalue <- p.adjust(df_Magnitude_HIVconsv$pval, method = "fdr")
+df_Magnitude_HIVconsv <- df_Magnitude_HIVconsv[order(abs(df_Magnitude_HIVconsv$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+
+cor.test(as.numeric(mat.cellcycle["cg02585483_KIF2A",]), as.numeric(cl_params3.w6$Magnitude_HIVconsv), method = "spearman")
+cor.test(as.numeric(mat.cellcycle["cg12286158_DMC1",]), as.numeric(cl_params3.w6$Magnitude_HIVconsv), method = "spearman") 
+
+
+
+# Bind to Data 3 the values of Breadth_HIVconsv
+Data.cellcyle_Breadth_HIVconsv <- cbind(Data.cellcyle, cl_params3.w6$Breadth_HIVconsv)
+rownames(Data.cellcyle_Breadth_HIVconsv)
+colnames(Data.cellcyle_Breadth_HIVconsv) <- c(colnames(Data.cellcyle), "Breadth_HIVconsv")
+id2 <- colnames(Data.cellcyle_Breadth_HIVconsv)
+Data.cellcyle_Breadth_HIVconsv <- apply(Data.cellcyle_Breadth_HIVconsv, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Breadth_HIVconsv
+library(Hmisc)
+res_corrBreadth_HIVconsv <- rcorr(Data.cellcyle_Breadth_HIVconsv,type="spearman") #Correlation between columns
+mat_corrBreadth_HIVconsv <- res_corrBreadth_HIVconsv$r
+pval_corrBreadth_HIVconsv <- res_corrBreadth_HIVconsv$P
+
+#Select all the correlations with Breadth_HIVconsv
+df_Breadth_HIVconsv <- data.frame(mat_corrBreadth_HIVconsv[nrow(mat_corrBreadth_HIVconsv),], pval_corrBreadth_HIVconsv[nrow(pval_corrBreadth_HIVconsv),])
+
+df_Breadth_HIVconsv$Name <- c(rownames(df_Breadth_HIVconsv))
+df_Breadth_HIVconsv$class <- "Breadth_HIVconsv"
+colnames(df_Breadth_HIVconsv) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Breadth_HIVconsv with Breadth_HIVconsv, only correlations of CpG with Breadth_HIVconsv now
+df_Breadth_HIVconsv <- df_Breadth_HIVconsv[-nrow(df_Breadth_HIVconsv),]
+df_Breadth_HIVconsv$qvalue <- p.adjust(df_Breadth_HIVconsv$pval, method = "fdr")
+df_Breadth_HIVconsv <- df_Breadth_HIVconsv[order(abs(df_Breadth_HIVconsv$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.cellcycle["cg02585483_KIF2A",]), as.numeric(cl_params3.w6$Breadth_HIVconsv), method = "spearman")
+cor.test(as.numeric(mat.cellcycle["cg12286158_DMC1",]), as.numeric(cl_params3.w6$Breadth_HIVconsv), method = "spearman") 
+
+
+# Bind to Data 3 the values of Magnitude_HIVtotal
+Data.cellcyle_Magnitude_HIVtotal <- cbind(Data.cellcyle, cl_params3.w6$Magnitude_HIVtotal)
+rownames(Data.cellcyle_Magnitude_HIVtotal)
+colnames(Data.cellcyle_Magnitude_HIVtotal) <- c(colnames(Data.cellcyle), "Magnitude_HIVtotal")
+id2 <- colnames(Data.cellcyle_Magnitude_HIVtotal)
+Data.cellcyle_Magnitude_HIVtotal <- apply(Data.cellcyle_Magnitude_HIVtotal, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Magnitude_HIVtotal
+library(Hmisc)
+res_corrMagnitude_HIVtotal <- rcorr(Data.cellcyle_Magnitude_HIVtotal,type="spearman") #Correlation between columns
+mat_corrMagnitude_HIVtotal <- res_corrMagnitude_HIVtotal$r
+pval_corrMagnitude_HIVtotal <- res_corrMagnitude_HIVtotal$P
+
+#Select all the correlations with Magnitude_HIVtotal
+df_Magnitude_HIVtotal <- data.frame(mat_corrMagnitude_HIVtotal[nrow(mat_corrMagnitude_HIVtotal),], pval_corrMagnitude_HIVtotal[nrow(pval_corrMagnitude_HIVtotal),])
+
+df_Magnitude_HIVtotal$Name <- c(rownames(df_Magnitude_HIVtotal))
+df_Magnitude_HIVtotal$class <- "Magnitude_HIVtotal"
+colnames(df_Magnitude_HIVtotal) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Magnitude_HIVtotal with Magnitude_HIVtotal, only correlations of CpG with Magnitude_HIVtotal now
+df_Magnitude_HIVtotal <- df_Magnitude_HIVtotal[-nrow(df_Magnitude_HIVtotal),]
+df_Magnitude_HIVtotal$qvalue <- p.adjust(df_Magnitude_HIVtotal$pval, method = "fdr")
+df_Magnitude_HIVtotal <- df_Magnitude_HIVtotal[order(abs(df_Magnitude_HIVtotal$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.cellcycle["cg02585483_KIF2A",]), as.numeric(cl_params3.w6$Magnitude_HIVtotal), method = "spearman")
+cor.test(as.numeric(mat.cellcycle["cg12286158_DMC1",]), as.numeric(cl_params3.w6$Magnitude_HIVtotal), method = "spearman") 
+
+
+# Bind to Data 3 the values of Breadth_HIVtotal
+Data.cellcyle_Breadth_HIVtotal <- cbind(Data.cellcyle, cl_params3.w6$Breadth_HIVtotal)
+rownames(Data.cellcyle_Breadth_HIVtotal)
+colnames(Data.cellcyle_Breadth_HIVtotal) <- c(colnames(Data.cellcyle), "Breadth_HIVtotal")
+id2 <- colnames(Data.cellcyle_Breadth_HIVtotal)
+Data.cellcyle_Breadth_HIVtotal <- apply(Data.cellcyle_Breadth_HIVtotal, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Breadth_HIVtotal
+library(Hmisc)
+res_corrBreadth_HIVtotal <- rcorr(Data.cellcyle_Breadth_HIVtotal,type="spearman") #Correlation between columns
+mat_corrBreadth_HIVtotal <- res_corrBreadth_HIVtotal$r
+pval_corrBreadth_HIVtotal <- res_corrBreadth_HIVtotal$P
+
+#Select all the correlations with Breadth_HIVtotal
+df_Breadth_HIVtotal <- data.frame(mat_corrBreadth_HIVtotal[nrow(mat_corrBreadth_HIVtotal),], pval_corrBreadth_HIVtotal[nrow(pval_corrBreadth_HIVtotal),])
+
+df_Breadth_HIVtotal$Name <- c(rownames(df_Breadth_HIVtotal))
+df_Breadth_HIVtotal$class <- "Breadth_HIVtotal"
+colnames(df_Breadth_HIVtotal) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Breadth_HIVtotal with Breadth_HIVtotal, only correlations of CpG with Breadth_HIVtotal now
+df_Breadth_HIVtotal <- df_Breadth_HIVtotal[-nrow(df_Breadth_HIVtotal),]
+df_Breadth_HIVtotal$qvalue <- p.adjust(df_Breadth_HIVtotal$pval, method = "fdr")
+df_Breadth_HIVtotal <- df_Breadth_HIVtotal[order(abs(df_Breadth_HIVtotal$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.cellcycle["cg02585483_KIF2A",]), as.numeric(cl_params3.w6$Breadth_HIVtotal), method = "spearman")
+cor.test(as.numeric(mat.cellcycle["cg12286158_DMC1",]), as.numeric(cl_params3.w6$Breadth_HIVtotal), method = "spearman") 
+
+
+#Data VL at day of cART ressumption and time to rebound. 
+
+cl_params4.w6 <- read.csv("../../BCN02-INFO/MAP_outcome.csv", header = TRUE, stringsAsFactors = FALSE)
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params4.w6) <- cl_params4.w6$PatientID
+colnames(cl_params4.w6) <- c("patient", "VL_MAP","time_MAP"  )
+cl_params4.w6 <- cl_params4.w6[grep(paste0(colnames(mat.cellcycle), collapse = "|"), rownames(cl_params4.w6)),]
+cl_params4.w6 <- cl_params4.w6[colnames(mat.cellcycle),]
+
+names.order <- data.frame(cl_params4.w6$patient, colnames(mat.cellcycle))
+
+
+# Bind to Data 3 the values of VL_MAP
+Data.cellcyle_VL_MAP <- cbind(Data.cellcyle, cl_params4.w6$VL_MAP)
+rownames(Data.cellcyle_VL_MAP)
+colnames(Data.cellcyle_VL_MAP) <- c(colnames(Data.cellcyle), "VL_MAP")
+id2 <- colnames(Data.cellcyle_VL_MAP)
+Data.cellcyle_VL_MAP <- apply(Data.cellcyle_VL_MAP, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with VL_MAP
+library(Hmisc)
+res_corrVL_MAP <- rcorr(Data.cellcyle_VL_MAP,type="spearman") #Correlation between columns
+mat_corrVL_MAP <- res_corrVL_MAP$r
+pval_corrVL_MAP <- res_corrVL_MAP$P
+
+#Select all the correlations with VL_MAP
+df_VL_MAP <- data.frame(mat_corrVL_MAP[nrow(mat_corrVL_MAP),], pval_corrVL_MAP[nrow(pval_corrVL_MAP),])
+
+df_VL_MAP$Name <- c(rownames(df_VL_MAP))
+df_VL_MAP$class <- "VL_MAP"
+colnames(df_VL_MAP) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of VL_MAP with VL_MAP, only correlations of CpG with VL_MAP now
+df_VL_MAP <- df_VL_MAP[-nrow(df_VL_MAP),]
+df_VL_MAP$qvalue <- p.adjust(df_VL_MAP$pval, method = "fdr")
+df_VL_MAP <- df_VL_MAP[order(abs(df_VL_MAP$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.cellcycle["cg02585483_KIF2A",]), as.numeric(cl_params4.w6$VL_MAP), method = "spearman")
+cor.test(as.numeric(mat.cellcycle["cg12286158_DMC1",]), as.numeric(cl_params4.w6$VL_MAP), method = "spearman") 
+
+
+
+# Bind to Data 3 the values of time_MAP
+Data.cellcyle_time_MAP <- cbind(Data.cellcyle, cl_params4.w6$time_MAP)
+rownames(Data.cellcyle_time_MAP)
+colnames(Data.cellcyle_time_MAP) <- c(colnames(Data.cellcyle), "time_MAP")
+id2 <- colnames(Data.cellcyle_time_MAP)
+Data.cellcyle_time_MAP <- apply(Data.cellcyle_time_MAP, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with time_MAP
+library(Hmisc)
+res_corrtime_MAP <- rcorr(Data.cellcyle_time_MAP,type="spearman") #Correlation between columns
+mat_corrtime_MAP <- res_corrtime_MAP$r
+pval_corrtime_MAP <- res_corrtime_MAP$P
+
+#Select all the correlations with time_MAP
+df_time_MAP <- data.frame(mat_corrtime_MAP[nrow(mat_corrtime_MAP),], pval_corrtime_MAP[nrow(pval_corrtime_MAP),])
+
+df_time_MAP$Name <- c(rownames(df_time_MAP))
+df_time_MAP$class <- "time_MAP"
+colnames(df_time_MAP) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of time_MAP with time_MAP, only correlations of CpG with time_MAP now
+df_time_MAP <- df_time_MAP[-nrow(df_time_MAP),]
+df_time_MAP$qvalue <- p.adjust(df_time_MAP$pval, method = "fdr")
+df_time_MAP <- df_time_MAP[order(abs(df_time_MAP$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.cellcycle["cg02585483_KIF2A",]), as.numeric(cl_params4.w6$time_MAP), method = "spearman")
+cor.test(as.numeric(mat.cellcycle["cg12286158_DMC1",]), as.numeric(cl_params4.w6$time_MAP), method = "spearman") 
+
+
+cl_params5.w6 <- read.csv("../../BCN02-INFO/preCART_info.csv", header = TRUE, stringsAsFactors = FALSE)
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params5.w6) <- cl_params5.w6$PatientID
+colnames(cl_params5.w6) <- c("patient", "Time_on_cART_BCN02", "VL_cART_initiation", "HIV_tocART", "UD_MAP" )
+cl_params5.w6 <- cl_params5.w6[grep(paste0(colnames(mat.cellcycle), collapse = "|"), rownames(cl_params5.w6)),]
+cl_params5.w6 <- cl_params5.w6[colnames(mat.cellcycle),]
+
+names.order <- data.frame(cl_params5.w6$patient, colnames(mat.cellcycle))
+
+
+# Bind to Data 3 the values of Time_on_cART_BCN02
+Data.cellcyle_Time_on_cART_BCN02 <- cbind(Data.cellcyle, cl_params5.w6$Time_on_cART_BCN02)
+rownames(Data.cellcyle_Time_on_cART_BCN02)
+colnames(Data.cellcyle_Time_on_cART_BCN02) <- c(colnames(Data.cellcyle), "Time_on_cART_BCN02")
+id2 <- colnames(Data.cellcyle_Time_on_cART_BCN02)
+Data.cellcyle_Time_on_cART_BCN02 <- apply(Data.cellcyle_Time_on_cART_BCN02, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Time_on_cART_BCN02
+library(Hmisc)
+res_corrTime_on_cART_BCN02 <- rcorr(Data.cellcyle_Time_on_cART_BCN02,type="spearman") #Correlation between columns
+mat_corrTime_on_cART_BCN02 <- res_corrTime_on_cART_BCN02$r
+pval_corrTime_on_cART_BCN02 <- res_corrTime_on_cART_BCN02$P
+
+#Select all the correlations with Time_on_cART_BCN02
+df_Time_on_cART_BCN02 <- data.frame(mat_corrTime_on_cART_BCN02[nrow(mat_corrTime_on_cART_BCN02),], pval_corrTime_on_cART_BCN02[nrow(pval_corrTime_on_cART_BCN02),])
+
+df_Time_on_cART_BCN02$Name <- c(rownames(df_Time_on_cART_BCN02))
+df_Time_on_cART_BCN02$class <- "Time_on_cART_BCN02"
+colnames(df_Time_on_cART_BCN02) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Time_on_cART_BCN02 with Time_on_cART_BCN02, only correlations of CpG with Time_on_cART_BCN02 now
+df_Time_on_cART_BCN02 <- df_Time_on_cART_BCN02[-nrow(df_Time_on_cART_BCN02),]
+df_Time_on_cART_BCN02$qvalue <- p.adjust(df_Time_on_cART_BCN02$pval, method = "fdr")
+df_Time_on_cART_BCN02 <- df_Time_on_cART_BCN02[order(abs(df_Time_on_cART_BCN02$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.cellcycle["cg02585483_KIF2A",]), as.numeric(cl_params5.w6$Time_on_cART_BCN02), method = "spearman")
+cor.test(as.numeric(mat.cellcycle["cg12286158_DMC1",]), as.numeric(cl_params5.w6$Time_on_cART_BCN02), method = "spearman") 
+
+
+# Bind to Data 3 the values of VL_cART_initiation
+Data.cellcyle_VL_cART_initiation <- cbind(Data.cellcyle, cl_params5.w6$VL_cART_initiation)
+rownames(Data.cellcyle_VL_cART_initiation)
+colnames(Data.cellcyle_VL_cART_initiation) <- c(colnames(Data.cellcyle), "VL_cART_initiation")
+id2 <- colnames(Data.cellcyle_VL_cART_initiation)
+Data.cellcyle_VL_cART_initiation <- apply(Data.cellcyle_VL_cART_initiation, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with VL_cART_initiation
+library(Hmisc)
+res_corrVL_cART_initiation <- rcorr(Data.cellcyle_VL_cART_initiation,type="spearman") #Correlation between columns
+mat_corrVL_cART_initiation <- res_corrVL_cART_initiation$r
+pval_corrVL_cART_initiation <- res_corrVL_cART_initiation$P
+
+#Select all the correlations with VL_cART_initiation
+df_VL_cART_initiation <- data.frame(mat_corrVL_cART_initiation[nrow(mat_corrVL_cART_initiation),], pval_corrVL_cART_initiation[nrow(pval_corrVL_cART_initiation),])
+
+df_VL_cART_initiation$Name <- c(rownames(df_VL_cART_initiation))
+df_VL_cART_initiation$class <- "VL_cART_initiation"
+colnames(df_VL_cART_initiation) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of VL_cART_initiation with VL_cART_initiation, only correlations of CpG with VL_cART_initiation now
+df_VL_cART_initiation <- df_VL_cART_initiation[-nrow(df_VL_cART_initiation),]
+df_VL_cART_initiation$qvalue <- p.adjust(df_VL_cART_initiation$pval, method = "fdr")
+df_VL_cART_initiation <- df_VL_cART_initiation[order(abs(df_VL_cART_initiation$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.cellcycle["cg02585483_KIF2A",]), as.numeric(cl_params5.w6$VL_cART_initiation), method = "spearman")
+cor.test(as.numeric(mat.cellcycle["cg12286158_DMC1",]), as.numeric(cl_params5.w6$VL_cART_initiation), method = "spearman") 
+
+
+# Bind to Data 3 the values of HIV_tocART
+Data.cellcyle_HIV_tocART <- cbind(Data.cellcyle, cl_params5.w6$HIV_tocART)
+rownames(Data.cellcyle_HIV_tocART)
+colnames(Data.cellcyle_HIV_tocART) <- c(colnames(Data.cellcyle), "HIV_tocART")
+id2 <- colnames(Data.cellcyle_HIV_tocART)
+Data.cellcyle_HIV_tocART <- apply(Data.cellcyle_HIV_tocART, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with HIV_tocART
+library(Hmisc)
+res_corrHIV_tocART <- rcorr(Data.cellcyle_HIV_tocART,type="spearman") #Correlation between columns
+mat_corrHIV_tocART <- res_corrHIV_tocART$r
+pval_corrHIV_tocART <- res_corrHIV_tocART$P
+
+#Select all the correlations with HIV_tocART
+df_HIV_tocART <- data.frame(mat_corrHIV_tocART[nrow(mat_corrHIV_tocART),], pval_corrHIV_tocART[nrow(pval_corrHIV_tocART),])
+
+df_HIV_tocART$Name <- c(rownames(df_HIV_tocART))
+df_HIV_tocART$class <- "HIV_tocART"
+colnames(df_HIV_tocART) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of HIV_tocART with HIV_tocART, only correlations of CpG with HIV_tocART now
+df_HIV_tocART <- df_HIV_tocART[-nrow(df_HIV_tocART),]
+df_HIV_tocART$qvalue <- p.adjust(df_HIV_tocART$pval, method = "fdr")
+df_HIV_tocART <- df_HIV_tocART[order(abs(df_HIV_tocART$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+
+cor.test(as.numeric(mat.cellcycle["cg02585483_KIF2A",]), as.numeric(cl_params5.w6$HIV_tocART), method = "spearman")
+cor.test(as.numeric(mat.cellcycle["cg12286158_DMC1",]), as.numeric(cl_params5.w6$HIV_tocART), method = "spearman") 
+
+
+# Bind to Data 3 the values of UD_MAP
+Data.cellcyle_UD_MAP <- cbind(Data.cellcyle, cl_params5.w6$UD_MAP)
+rownames(Data.cellcyle_UD_MAP)
+colnames(Data.cellcyle_UD_MAP) <- c(colnames(Data.cellcyle), "UD_MAP")
+id2 <- colnames(Data.cellcyle_UD_MAP)
+Data.cellcyle_UD_MAP <- apply(Data.cellcyle_UD_MAP, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with UD_MAP
+library(Hmisc)
+res_corrUD_MAP <- rcorr(Data.cellcyle_UD_MAP,type="spearman") #Correlation between columns
+mat_corrUD_MAP <- res_corrUD_MAP$r
+pval_corrUD_MAP <- res_corrUD_MAP$P
+
+#Select all the correlations with UD_MAP
+df_UD_MAP <- data.frame(mat_corrUD_MAP[nrow(mat_corrUD_MAP),], pval_corrUD_MAP[nrow(pval_corrUD_MAP),])
+
+df_UD_MAP$Name <- c(rownames(df_UD_MAP))
+df_UD_MAP$class <- "UD_MAP"
+colnames(df_UD_MAP) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of UD_MAP with UD_MAP, only correlations of CpG with UD_MAP now
+df_UD_MAP <- df_UD_MAP[-nrow(df_UD_MAP),]
+df_UD_MAP$qvalue <- p.adjust(df_UD_MAP$pval, method = "fdr")
+df_UD_MAP <- df_UD_MAP[order(abs(df_UD_MAP$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+
+cor.test(as.numeric(mat.cellcycle["cg02585483_KIF2A",]), as.numeric(cl_params5.w6$UD_MAP), method = "spearman")
+cor.test(as.numeric(mat.cellcycle["cg12286158_DMC1",]), as.numeric(cl_params5.w6$UD_MAP), method = "spearman") 
+
+
+library(dplyr)
+df_cellcycle <- bind_rows(list(df_Proviral, df_SCA, df_CA_RNA, df_H3Ac,  df_Magnitude_HIVconsv,df_Breadth_HIVconsv, df_Magnitude_HIVtotal, df_Breadth_HIVtotal, df_VL_MAP, df_time_MAP, df_Time_on_cART_BCN02, df_VL_cART_initiation, df_HIV_tocART, df_UD_MAP))
+
+df_cellcycle$module <- "cellcycle"
+
+write.table(df_cellcycle, file = "../HeatmapMeth/df_cellcycle_New.txt", sep = "\t")
+
+```
+
+```{r}
+Rebound2 <- rownames(mat.cellcycle2)
+Late <- grep("A02|A05|A09|B13", Rebound2)
+Rebound2[Late] <- "Late"
+Rebound2[-Late] <- "Early"
+
+Rebound.col <- rownames(mat.cellcycle2)
+Rebound.col[Late] <- "orange"
+Rebound.col[-Late] <- "blue"
+
+df_SCA.cellcycle <- df_SCA[colnames(mat.cellcycle2),]
+RhoSCA.cellcycle <- df_SCA.cellcycle$Rho
+
+df_Proviral.cellcycle <- df_Proviral[colnames(mat.cellcycle2),]
+RhoProviral.cellcycle <- df_Proviral.cellcycle$Rho
+
+df_CA_RNA.cellcycle <- df_CA_RNA[colnames(mat.cellcycle2),]
+RhoCA_RNA.cellcycle <- df_CA_RNA.cellcycle$Rho
+
+df_H3Ac.cellcycle <- df_H3Ac[colnames(mat.cellcycle2),]
+RhoH3Ac.cellcycle <- df_H3Ac.cellcycle$Rho
+
+df_Magnitude.cellcycle <- df_Magnitude_HIVconsv[colnames(mat.cellcycle2),]
+RhoMagnitude.cellcycle <- df_Magnitude.cellcycle$Rho
+
+df_Breadth.cellcycle <- df_Breadth_HIVconsv[colnames(mat.cellcycle2),]
+RhoBreadth.cellcycle <- df_Breadth.cellcycle$Rho
+
+
+df_MagnitudeHIVtotal.cellcycle <- df_Magnitude_HIVtotal[colnames(mat.cellcycle2),]
+RhoMagnitudeHIVtotal.cellcycle <- df_MagnitudeHIVtotal.cellcycle$Rho
+
+df_BreadthHIVtotal.cellcycle <- df_Breadth_HIVtotal[colnames(mat.cellcycle2),]
+RhoBreadthHIVtotal.cellcycle <- df_BreadthHIVtotal.cellcycle$Rho
+
+
+df_VL_MAP.cellcycle <- df_VL_MAP[colnames(mat.cellcycle2),]
+RhoVL_MAP.cellcycle <- df_VL_MAP.cellcycle$Rho
+
+df_time_MAP.cellcycle <- df_time_MAP[colnames(mat.cellcycle2),]
+Rhotime_MAP.cellcycle <- df_time_MAP.cellcycle$Rho
+df_Time_on_cART_BCN02.cellcycle <- df_Time_on_cART_BCN02[colnames(mat.cellcycle2),]
+RhoTime_on_cART_BCN02.cellcycle <- df_Time_on_cART_BCN02.cellcycle$Rho
+
+df_VL_cART_initiation.cellcycle <- df_VL_cART_initiation[colnames(mat.cellcycle2),]
+RhoVL_cART_initiation.cellcycle <- df_VL_cART_initiation.cellcycle$Rho
+
+df_HIV_tocART.cellcycle <- df_HIV_tocART[colnames(mat.cellcycle2),]
+RhoHIV_tocART.cellcycle <- df_HIV_tocART.cellcycle$Rho
+
+df_UD_MAP.cellcycle <- df_UD_MAP[colnames(mat.cellcycle2),]
+RhoUD_MAP.cellcycle <- df_UD_MAP.cellcycle$Rho
+
+
+column_ha = HeatmapAnnotation(Rebound = Rebound2, col = list(Rebound = c("Late" = "orange", "Early" = "blue")))
+
+col_fun = colorRamp2(c(-1, 0, 1), c("red", "white", "blue")) #Viral
+col_fun1 = colorRamp2(c(-1, 0, 1), c("green", "white", "yellow")) #ICS
+col_fun2 = colorRamp2(c(-1, 0, 1), c("pink", "white", "purple")) #ELISPOTdata
+col_fun3 = colorRamp2(c(-1, 0, 1), c("orange", "white", "brown")) #
+col_fun4 = colorRamp2(c(-1, 0, 1), c("grey", "white", "darkblue")) # MAP data
+
+
+row_ha.cellcycle = rowAnnotation(Proviral = RhoProviral.cellcycle, SCA = RhoSCA.cellcycle, CA_RNA = RhoCA_RNA.cellcycle, H3Ac = RhoH3Ac.cellcycle, Magnitude = RhoMagnitude.cellcycle, Breadth = RhoBreadth.cellcycle, Magnitude_HIVtotal = RhoMagnitudeHIVtotal.cellcycle, Breadth_HIVtotal = RhoBreadthHIVtotal.cellcycle, VL_MAP = RhoVL_MAP.cellcycle, time = Rhotime_MAP.cellcycle, time_cART_BCN02_entry = RhoTime_on_cART_BCN02.cellcycle, VL_cART_initiation = RhoVL_cART_initiation.cellcycle, HIV_tocART = RhoHIV_tocART.cellcycle, UD_MAP = RhoUD_MAP.cellcycle, col = list(Proviral = col_fun, SCA = col_fun, CA_RNA = col_fun, H3Ac = col_fun, Magnitude = col_fun2, Breadth = col_fun2,Magnitude_HIVtotal = col_fun2, Breadth_HIVtotal = col_fun2, VL_MAP =col_fun4, time = col_fun4, time_cART_BCN02_entry = col_fun3, VL_cART_initiation = col_fun3, HIV_tocART =col_fun3, UD_MAP = col_fun3))
+
+
+Heatmap(t(mat.cellcycle2), show_column_dend = FALSE,cluster_columns = FALSE,  col = colorRamp2(c(-2,2), c( c("red", "yellow"))),row_names_gp = gpar(fontsize = 7), height = unit(2.5, "mm")*nrow(t(mat.cellcycle2)), top_annotation = column_ha, right_annotation = row_ha.cellcycle)
+
+pdf("../HeatmapMeth/cellcycle_Corrparams_new.pdf", height = 25, width = 15)
+
+Heatmap(t(mat.cellcycle2), show_column_dend = FALSE,cluster_columns = FALSE,  col = colorRamp2(c(-2,2), c( c("red", "yellow"))),row_names_gp = gpar(fontsize = 7), height = unit(2.5, "mm")*nrow(t(mat.cellcycle2)), top_annotation = column_ha, right_annotation = row_ha.cellcycle)
+dev.off()
+
+```
+
+
+
+#Celltransport
+```{r}
+
+transport <- unique(c(Genes_in_Module$`Cell transport`))
+transport.df <- data.frame(transport)
+length(transport)# 2174
+
+library(gprofiler2)
+transportconvert <- gconvert(query = as.character(transport) , organism = "hsapiens",
+         target="UCSC", mthreshold = Inf, filter_na = TRUE)
+
+transport.genes <- unique(c(transportconvert$input, transportconvert$name))
+
+
+#Genes associated with transport response
+EvsLw6.transport <- subset(Genes_EvsLw6.ok, Genes_EvsLw6.ok$Gene %in% transport.genes) #1738
+length(unique(EvsLw6.transport$Gene))#3
+
+
+```
+
+
+```{r}
+
+#Read DNAmet at w6
+CpGs_transport <-paste0("^", as.character(EvsLw6.transport$Row.names))
+CpGs_transport_ok <-paste0(CpGs_transport, collapse = "|")
+
+DNAMethyl1.transport <- DNAMethyl1[grep(CpGs_transport_ok, rownames(DNAMethyl1)), ]
+
+ann450.transport <- ann450[rownames(DNAMethyl1.transport),]
+df.transport <- data.frame(rownames(ann450.transport), rownames(DNAMethyl1.transport))
+rownames(DNAMethyl1.transport) <- ann450.transport$CpG_Gene
+
+mat.transport <- as.matrix(DNAMethyl1.transport)
+colnames(mat.transport) <- gsub(".w6", "" ,colnames(mat.transport))
+mat.transport <- mat.transport[, c("B13", "A02", "A05", "A09", "A04", "B14", "B10", "B06", "A15", "A13", "A12", "B05")]
+
+Rebound2 <- colnames(mat.transport )
+Late <- grep("A02|A05|A09|B13", Rebound2)
+Rebound2[Late] <- "orange"
+Rebound2[-Late] <- "blue"
+
+#Z-score
+mat.transport2 <- scale(t(mat.transport))
+
+Heatmap(t(mat.transport2), show_column_dend = FALSE, cluster_columns = FALSE,  col = colorRamp2(c(-2,2), c( c("red", "yellow"))))
+
+```
+
+
+
+#Correlations of transport Genes. 
+
+```{r}
+
+cl_params <- read.csv("../../BCN02-INFO/ClincalandImmuneinfow6_viral.csv", header = TRUE, stringsAsFactors = FALSE)
+cl_params.w6 <- cl_params[,c(1, grep("w6", colnames(cl_params)))]
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params.w6) <- cl_params.w6$X
+colnames(cl_params.w6) <- c("patient", "Proviral", "SCA", "CA_RNA", "H3Ac")
+cl_params.w6 <- cl_params.w6[grep(paste0(colnames(mat.transport), collapse = "|"), rownames(cl_params.w6)),]
+cl_params.w6 <- cl_params.w6[colnames(mat.transport),]
+
+names.order <- data.frame(cl_params.w6$patient, colnames(mat.transport))
+
+
+# Transpose beta values for selected cg --> Patients in rows now and cg probes in columns
+# there's no longer the name of the cg
+Data3.transport <- t(mat.transport)
+Data3.transport[1:10, 1:10]
+dim(Data3.transport)
+
+# Bind to Data 3 the values of Proviral
+Data3.transport_Proviral <- cbind(Data3.transport, cl_params.w6$Proviral)
+rownames(Data3.transport_Proviral)
+colnames(Data3.transport_Proviral) <- c(colnames(Data3.transport), "Proviral")
+id2 <- colnames(Data3.transport_Proviral)
+Data3.transport_Proviral <- apply(Data3.transport_Proviral, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Proviral
+library(Hmisc)
+res_corrProviral <- rcorr(Data3.transport_Proviral,type="spearman") #Correlation between columns
+mat_corrProviral <- res_corrProviral$r
+pval_corrProviral <- res_corrProviral$P
+
+#Select all the correlations with Proviral
+df_Proviral <- data.frame(mat_corrProviral[nrow(mat_corrProviral),], pval_corrProviral[nrow(pval_corrProviral),])
+
+df_Proviral$Name <- c(rownames(df_Proviral))
+df_Proviral$class <- "Proviral"
+colnames(df_Proviral) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Proviral with Proviral, only correlations of CpG with Proviral now
+df_Proviral <- df_Proviral[-nrow(df_Proviral),]
+df_Proviral$qvalue <- p.adjust(df_Proviral$pval, method = "fdr")
+df_Proviral <- df_Proviral[order(abs(df_Proviral$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.transport["cg02585483_KIF2A",]), as.numeric(cl_params.w6$Proviral), method = "spearman") 
+cor.test(as.numeric(mat.transport["cg00589617_GALNT2",]), as.numeric(cl_params.w6$Proviral), method = "spearman")
+
+
+#SCA
+Data3.transport_SCA <- cbind(Data3.transport, cl_params.w6$SCA)
+rownames(Data3.transport_SCA)
+id2 <- colnames(Data3.transport_SCA)
+Data3.transport_SCA <- apply(Data3.transport_SCA, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with SCA
+library(Hmisc)
+res_corrSCA <- rcorr(Data3.transport_SCA,type="spearman") #Correlation between columns
+mat_corrSCA <- res_corrSCA$r
+pval_corrSCA <- res_corrSCA$P
+
+#Select all the correlations with SCA
+df_SCA <- data.frame(mat_corrSCA[nrow(mat_corrSCA),], pval_corrSCA[nrow(pval_corrSCA),])
+
+df_SCA$Name <- c(rownames(df_SCA))
+df_SCA$class <- "SCA"
+colnames(df_SCA) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of SCA with SCA, only correlations of CpG with SCA now
+df_SCA <- df_SCA[-nrow(df_SCA),]
+df_SCA$qvalue <- p.adjust(df_SCA$pval, method = "fdr")
+df_SCA <- df_SCA[order(abs(df_SCA$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.transport["cg02585483_KIF2A",]), as.numeric(cl_params.w6$SCA), method = "spearman") 
+cor.test(as.numeric(mat.transport["cg00589617_GALNT2",]), as.numeric(cl_params.w6$SCA), method = "spearman")
+
+#CA-RNA
+Data3.transport_CA_RNA <- cbind(Data3.transport, cl_params.w6$CA_RNA)
+rownames(Data3.transport_CA_RNA)
+id2 <- colnames(Data3.transport_CA_RNA)
+Data3.transport_CA_RNA <- apply(Data3.transport_CA_RNA, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with CA_RNA
+library(Hmisc)
+res_corrCA_RNA <- rcorr(Data3.transport_CA_RNA,type="spearman") #Correlation between columns
+mat_corrCA_RNA <- res_corrCA_RNA$r
+pval_corrCA_RNA <- res_corrCA_RNA$P
+
+#Select all the correlations with CA_RNA
+df_CA_RNA <- data.frame(mat_corrCA_RNA[nrow(mat_corrCA_RNA),], pval_corrCA_RNA[nrow(pval_corrCA_RNA),])
+
+df_CA_RNA$Name <- c(rownames(df_CA_RNA))
+df_CA_RNA$class <- "CA_RNA"
+colnames(df_CA_RNA) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of CA_RNA with CA_RNA, only correlations of CpG with CA_RNA now
+df_CA_RNA <- df_CA_RNA[-nrow(df_CA_RNA),]
+df_CA_RNA$qvalue <- p.adjust(df_CA_RNA$pval, method = "fdr")
+df_CA_RNA <- df_CA_RNA[order(abs(df_CA_RNA$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.transport["cg02585483_KIF2A",]), as.numeric(cl_params.w6$CA_RNA), method = "spearman") 
+cor.test(as.numeric(mat.transport["cg00589617_GALNT2",]), as.numeric(cl_params.w6$CA_RNA), method = "spearman")
+
+
+#ELISPOT Data
+
+cl_params3.w6 <- read.csv("../../BCN02-INFO/ELISPOT._datacsv.csv", header = TRUE, stringsAsFactors = FALSE)
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params3.w6) <- cl_params3.w6$X
+colnames(cl_params3.w6) <- c("patient", "Magnitude_HIVconsv","Breadth_HIVconsv",
+                             "Magnitude_HIVtotal","Breadth_HIVtotal"  )
+cl_params3.w6 <- cl_params3.w6[grep(paste0(colnames(mat.transport), collapse = "|"), rownames(cl_params3.w6)),]
+cl_params3.w6 <- cl_params3.w6[colnames(mat.transport),]
+
+names.order <- data.frame(cl_params3.w6$patient, colnames(mat.transport))
+
+
+# Bind to Data 3 the values of Magnitude_HIVconsv
+Data3.transport_Magnitude_HIVconsv <- cbind(Data3.transport, cl_params3.w6$Magnitude_HIVconsv)
+rownames(Data3.transport_Magnitude_HIVconsv)
+colnames(Data3.transport_Magnitude_HIVconsv) <- c(colnames(Data3.transport), "Magnitude_HIVconsv")
+id2 <- colnames(Data3.transport_Magnitude_HIVconsv)
+Data3.transport_Magnitude_HIVconsv <- apply(Data3.transport_Magnitude_HIVconsv, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Magnitude_HIVconsv
+library(Hmisc)
+res_corrMagnitude_HIVconsv <- rcorr(Data3.transport_Magnitude_HIVconsv,type="spearman") #Correlation between columns
+mat_corrMagnitude_HIVconsv <- res_corrMagnitude_HIVconsv$r
+pval_corrMagnitude_HIVconsv <- res_corrMagnitude_HIVconsv$P
+
+#Select all the correlations with Magnitude_HIVconsv
+df_Magnitude_HIVconsv <- data.frame(mat_corrMagnitude_HIVconsv[nrow(mat_corrMagnitude_HIVconsv),], pval_corrMagnitude_HIVconsv[nrow(pval_corrMagnitude_HIVconsv),])
+
+df_Magnitude_HIVconsv$Name <- c(rownames(df_Magnitude_HIVconsv))
+df_Magnitude_HIVconsv$class <- "Magnitude_HIVconsv"
+colnames(df_Magnitude_HIVconsv) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Magnitude_HIVconsv with Magnitude_HIVconsv, only correlations of CpG with Magnitude_HIVconsv now
+df_Magnitude_HIVconsv <- df_Magnitude_HIVconsv[-nrow(df_Magnitude_HIVconsv),]
+df_Magnitude_HIVconsv$qvalue <- p.adjust(df_Magnitude_HIVconsv$pval, method = "fdr")
+df_Magnitude_HIVconsv <- df_Magnitude_HIVconsv[order(abs(df_Magnitude_HIVconsv$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.transport["cg02585483_KIF2A",]), as.numeric(cl_params3.w6$Magnitude_HIVconsv), method = "spearman") 
+cor.test(as.numeric(mat.transport["cg00589617_GALNT2",]), as.numeric(cl_params3.w6$Magnitude_HIVconsv), method = "spearman")
+
+
+# Bind to Data 3 the values of Breadth_HIVconsv
+Data3.transport_Breadth_HIVconsv <- cbind(Data3.transport, cl_params3.w6$Breadth_HIVconsv)
+rownames(Data3.transport_Breadth_HIVconsv)
+colnames(Data3.transport_Breadth_HIVconsv) <- c(colnames(Data3.transport), "Breadth_HIVconsv")
+id2 <- colnames(Data3.transport_Breadth_HIVconsv)
+Data3.transport_Breadth_HIVconsv <- apply(Data3.transport_Breadth_HIVconsv, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Breadth_HIVconsv
+library(Hmisc)
+res_corrBreadth_HIVconsv <- rcorr(Data3.transport_Breadth_HIVconsv,type="spearman") #Correlation between columns
+mat_corrBreadth_HIVconsv <- res_corrBreadth_HIVconsv$r
+pval_corrBreadth_HIVconsv <- res_corrBreadth_HIVconsv$P
+
+#Select all the correlations with Breadth_HIVconsv
+df_Breadth_HIVconsv <- data.frame(mat_corrBreadth_HIVconsv[nrow(mat_corrBreadth_HIVconsv),], pval_corrBreadth_HIVconsv[nrow(pval_corrBreadth_HIVconsv),])
+
+df_Breadth_HIVconsv$Name <- c(rownames(df_Breadth_HIVconsv))
+df_Breadth_HIVconsv$class <- "Breadth_HIVconsv"
+colnames(df_Breadth_HIVconsv) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Breadth_HIVconsv with Breadth_HIVconsv, only correlations of CpG with Breadth_HIVconsv now
+df_Breadth_HIVconsv <- df_Breadth_HIVconsv[-nrow(df_Breadth_HIVconsv),]
+df_Breadth_HIVconsv$qvalue <- p.adjust(df_Breadth_HIVconsv$pval, method = "fdr")
+df_Breadth_HIVconsv <- df_Breadth_HIVconsv[order(abs(df_Breadth_HIVconsv$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.transport["cg02585483_KIF2A",]), as.numeric(cl_params3.w6$Breadth_HIVconsv), method = "spearman") 
+cor.test(as.numeric(mat.transport["cg00589617_GALNT2",]), as.numeric(cl_params3.w6$Breadth_HIVconsv), method = "spearman")
+
+
+# Bind to Data 3 the values of Magnitude_HIVtotal
+Data3.transport_Magnitude_HIVtotal <- cbind(Data3.transport, cl_params3.w6$Magnitude_HIVtotal)
+rownames(Data3.transport_Magnitude_HIVtotal)
+colnames(Data3.transport_Magnitude_HIVtotal) <- c(colnames(Data3.transport), "Magnitude_HIVtotal")
+id2 <- colnames(Data3.transport_Magnitude_HIVtotal)
+Data3.transport_Magnitude_HIVtotal <- apply(Data3.transport_Magnitude_HIVtotal, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Magnitude_HIVtotal
+library(Hmisc)
+res_corrMagnitude_HIVtotal <- rcorr(Data3.transport_Magnitude_HIVtotal,type="spearman") #Correlation between columns
+mat_corrMagnitude_HIVtotal <- res_corrMagnitude_HIVtotal$r
+pval_corrMagnitude_HIVtotal <- res_corrMagnitude_HIVtotal$P
+
+#Select all the correlations with Magnitude_HIVtotal
+df_Magnitude_HIVtotal <- data.frame(mat_corrMagnitude_HIVtotal[nrow(mat_corrMagnitude_HIVtotal),], pval_corrMagnitude_HIVtotal[nrow(pval_corrMagnitude_HIVtotal),])
+
+df_Magnitude_HIVtotal$Name <- c(rownames(df_Magnitude_HIVtotal))
+df_Magnitude_HIVtotal$class <- "Magnitude_HIVtotal"
+colnames(df_Magnitude_HIVtotal) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Magnitude_HIVtotal with Magnitude_HIVtotal, only correlations of CpG with Magnitude_HIVtotal now
+df_Magnitude_HIVtotal <- df_Magnitude_HIVtotal[-nrow(df_Magnitude_HIVtotal),]
+df_Magnitude_HIVtotal$qvalue <- p.adjust(df_Magnitude_HIVtotal$pval, method = "fdr")
+df_Magnitude_HIVtotal <- df_Magnitude_HIVtotal[order(abs(df_Magnitude_HIVtotal$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.transport["cg02585483_KIF2A",]), as.numeric(cl_params3.w6$Magnitude_HIVtotal), method = "spearman") 
+cor.test(as.numeric(mat.transport["cg00589617_GALNT2",]), as.numeric(cl_params3.w6$Magnitude_HIVtotal), method = "spearman")
+
+# Bind to Data 3 the values of Breadth_HIVtotal
+Data3.transport_Breadth_HIVtotal <- cbind(Data3.transport, cl_params3.w6$Breadth_HIVtotal)
+rownames(Data3.transport_Breadth_HIVtotal)
+colnames(Data3.transport_Breadth_HIVtotal) <- c(colnames(Data3.transport), "Breadth_HIVtotal")
+id2 <- colnames(Data3.transport_Breadth_HIVtotal)
+Data3.transport_Breadth_HIVtotal <- apply(Data3.transport_Breadth_HIVtotal, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Breadth_HIVtotal
+library(Hmisc)
+res_corrBreadth_HIVtotal <- rcorr(Data3.transport_Breadth_HIVtotal,type="spearman") #Correlation between columns
+mat_corrBreadth_HIVtotal <- res_corrBreadth_HIVtotal$r
+pval_corrBreadth_HIVtotal <- res_corrBreadth_HIVtotal$P
+
+#Select all the correlations with Breadth_HIVtotal
+df_Breadth_HIVtotal <- data.frame(mat_corrBreadth_HIVtotal[nrow(mat_corrBreadth_HIVtotal),], pval_corrBreadth_HIVtotal[nrow(pval_corrBreadth_HIVtotal),])
+
+df_Breadth_HIVtotal$Name <- c(rownames(df_Breadth_HIVtotal))
+df_Breadth_HIVtotal$class <- "Breadth_HIVtotal"
+colnames(df_Breadth_HIVtotal) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Breadth_HIVtotal with Breadth_HIVtotal, only correlations of CpG with Breadth_HIVtotal now
+df_Breadth_HIVtotal <- df_Breadth_HIVtotal[-nrow(df_Breadth_HIVtotal),]
+df_Breadth_HIVtotal$qvalue <- p.adjust(df_Breadth_HIVtotal$pval, method = "fdr")
+df_Breadth_HIVtotal <- df_Breadth_HIVtotal[order(abs(df_Breadth_HIVtotal$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.transport["cg02585483_KIF2A",]), as.numeric(cl_params3.w6$Breadth_HIVtotal), method = "spearman") 
+cor.test(as.numeric(mat.transport["cg00589617_GALNT2",]), as.numeric(cl_params3.w6$Breadth_HIVtotal), method = "spearman")
+
+#Data VL at day of cART ressumption and time to rebound. 
+
+
+cl_params4.w6 <- read.csv("../../BCN02-INFO/MAP_outcome.csv", header = TRUE, stringsAsFactors = FALSE)
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params4.w6) <- cl_params4.w6$PatientID
+colnames(cl_params4.w6) <- c("patient", "VL_MAP","time_MAP"  )
+cl_params4.w6 <- cl_params4.w6[grep(paste0(colnames(mat.transport), collapse = "|"), rownames(cl_params4.w6)),]
+cl_params4.w6 <- cl_params4.w6[colnames(mat.transport),]
+
+names.order <- data.frame(cl_params4.w6$patient, colnames(mat.transport))
+
+
+# Bind to Data 3 the values of VL_MAP
+Data3.transport_VL_MAP <- cbind(Data3.transport, cl_params4.w6$VL_MAP)
+rownames(Data3.transport_VL_MAP)
+colnames(Data3.transport_VL_MAP) <- c(colnames(Data3.transport), "VL_MAP")
+id2 <- colnames(Data3.transport_VL_MAP)
+Data3.transport_VL_MAP <- apply(Data3.transport_VL_MAP, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with VL_MAP
+library(Hmisc)
+res_corrVL_MAP <- rcorr(Data3.transport_VL_MAP,type="spearman") #Correlation between columns
+mat_corrVL_MAP <- res_corrVL_MAP$r
+pval_corrVL_MAP <- res_corrVL_MAP$P
+
+#Select all the correlations with VL_MAP
+df_VL_MAP <- data.frame(mat_corrVL_MAP[nrow(mat_corrVL_MAP),], pval_corrVL_MAP[nrow(pval_corrVL_MAP),])
+
+df_VL_MAP$Name <- c(rownames(df_VL_MAP))
+df_VL_MAP$class <- "VL_MAP"
+colnames(df_VL_MAP) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of VL_MAP with VL_MAP, only correlations of CpG with VL_MAP now
+df_VL_MAP <- df_VL_MAP[-nrow(df_VL_MAP),]
+df_VL_MAP$qvalue <- p.adjust(df_VL_MAP$pval, method = "fdr")
+df_VL_MAP <- df_VL_MAP[order(abs(df_VL_MAP$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.transport["cg02585483_KIF2A",]), as.numeric(cl_params4.w6$VL_MAP), method = "spearman") 
+cor.test(as.numeric(mat.transport["cg00589617_GALNT2",]), as.numeric(cl_params4.w6$VL_MAP), method = "spearman")
+
+
+# Bind to Data 3 the values of time_MAP
+Data3.transport_time_MAP <- cbind(Data3.transport, cl_params4.w6$time_MAP)
+rownames(Data3.transport_time_MAP)
+colnames(Data3.transport_time_MAP) <- c(colnames(Data3.transport), "time_MAP")
+id2 <- colnames(Data3.transport_time_MAP)
+Data3.transport_time_MAP <- apply(Data3.transport_time_MAP, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with time_MAP
+library(Hmisc)
+res_corrtime_MAP <- rcorr(Data3.transport_time_MAP,type="spearman") #Correlation between columns
+mat_corrtime_MAP <- res_corrtime_MAP$r
+pval_corrtime_MAP <- res_corrtime_MAP$P
+
+#Select all the correlations with time_MAP
+df_time_MAP <- data.frame(mat_corrtime_MAP[nrow(mat_corrtime_MAP),], pval_corrtime_MAP[nrow(pval_corrtime_MAP),])
+
+df_time_MAP$Name <- c(rownames(df_time_MAP))
+df_time_MAP$class <- "time_MAP"
+colnames(df_time_MAP) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of time_MAP with time_MAP, only correlations of CpG with time_MAP now
+df_time_MAP <- df_time_MAP[-nrow(df_time_MAP),]
+df_time_MAP$qvalue <- p.adjust(df_time_MAP$pval, method = "fdr")
+df_time_MAP <- df_time_MAP[order(abs(df_time_MAP$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.transport["cg02585483_KIF2A",]), as.numeric(cl_params4.w6$time_MAP), method = "spearman") 
+cor.test(as.numeric(mat.transport["cg00589617_GALNT2",]), as.numeric(cl_params4.w6$time_MAP), method = "spearman")
+
+
+cl_params5.w6 <- read.csv("../../BCN02-INFO/preCART_info.csv", header = TRUE, stringsAsFactors = FALSE)
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params5.w6) <- cl_params5.w6$PatientID
+colnames(cl_params5.w6) <- c("patient", "Time_on_cART_BCN02", "VL_cART_initiation", "HIV_tocART", "UD_MAP" )
+cl_params5.w6 <- cl_params5.w6[grep(paste0(colnames(mat.transport), collapse = "|"), rownames(cl_params5.w6)),]
+cl_params5.w6 <- cl_params5.w6[colnames(mat.transport),]
+
+names.order <- data.frame(cl_params5.w6$patient, colnames(mat.transport))
+
+
+# Bind to Data 3 the values of Time_on_cART_BCN02
+Data3.transport_Time_on_cART_BCN02 <- cbind(Data3.transport, cl_params5.w6$Time_on_cART_BCN02)
+rownames(Data3.transport_Time_on_cART_BCN02)
+colnames(Data3.transport_Time_on_cART_BCN02) <- c(colnames(Data3.transport), "Time_on_cART_BCN02")
+id2 <- colnames(Data3.transport_Time_on_cART_BCN02)
+Data3.transport_Time_on_cART_BCN02 <- apply(Data3.transport_Time_on_cART_BCN02, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with Time_on_cART_BCN02
+library(Hmisc)
+res_corrTime_on_cART_BCN02 <- rcorr(Data3.transport_Time_on_cART_BCN02,type="spearman") #Correlation between columns
+mat_corrTime_on_cART_BCN02 <- res_corrTime_on_cART_BCN02$r
+pval_corrTime_on_cART_BCN02 <- res_corrTime_on_cART_BCN02$P
+
+#Select all the correlations with Time_on_cART_BCN02
+df_Time_on_cART_BCN02 <- data.frame(mat_corrTime_on_cART_BCN02[nrow(mat_corrTime_on_cART_BCN02),], pval_corrTime_on_cART_BCN02[nrow(pval_corrTime_on_cART_BCN02),])
+
+df_Time_on_cART_BCN02$Name <- c(rownames(df_Time_on_cART_BCN02))
+df_Time_on_cART_BCN02$class <- "Time_on_cART_BCN02"
+colnames(df_Time_on_cART_BCN02) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of Time_on_cART_BCN02 with Time_on_cART_BCN02, only correlations of CpG with Time_on_cART_BCN02 now
+df_Time_on_cART_BCN02 <- df_Time_on_cART_BCN02[-nrow(df_Time_on_cART_BCN02),]
+df_Time_on_cART_BCN02$qvalue <- p.adjust(df_Time_on_cART_BCN02$pval, method = "fdr")
+df_Time_on_cART_BCN02 <- df_Time_on_cART_BCN02[order(abs(df_Time_on_cART_BCN02$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.transport["cg02585483_KIF2A",]), as.numeric(cl_params5.w6$Time_on_cART_BCN02), method = "spearman") 
+cor.test(as.numeric(mat.transport["cg00589617_GALNT2",]), as.numeric(cl_params5.w6$Time_on_cART_BCN02), method = "spearman")
+
+
+
+# Bind to Data 3 the values of VL_cART_initiation
+Data3.transport_VL_cART_initiation <- cbind(Data3.transport, cl_params5.w6$VL_cART_initiation)
+rownames(Data3.transport_VL_cART_initiation)
+colnames(Data3.transport_VL_cART_initiation) <- c(colnames(Data3.transport), "VL_cART_initiation")
+id2 <- colnames(Data3.transport_VL_cART_initiation)
+Data3.transport_VL_cART_initiation <- apply(Data3.transport_VL_cART_initiation, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with VL_cART_initiation
+library(Hmisc)
+res_corrVL_cART_initiation <- rcorr(Data3.transport_VL_cART_initiation,type="spearman") #Correlation between columns
+mat_corrVL_cART_initiation <- res_corrVL_cART_initiation$r
+pval_corrVL_cART_initiation <- res_corrVL_cART_initiation$P
+
+#Select all the correlations with VL_cART_initiation
+df_VL_cART_initiation <- data.frame(mat_corrVL_cART_initiation[nrow(mat_corrVL_cART_initiation),], pval_corrVL_cART_initiation[nrow(pval_corrVL_cART_initiation),])
+
+df_VL_cART_initiation$Name <- c(rownames(df_VL_cART_initiation))
+df_VL_cART_initiation$class <- "VL_cART_initiation"
+colnames(df_VL_cART_initiation) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of VL_cART_initiation with VL_cART_initiation, only correlations of CpG with VL_cART_initiation now
+df_VL_cART_initiation <- df_VL_cART_initiation[-nrow(df_VL_cART_initiation),]
+df_VL_cART_initiation$qvalue <- p.adjust(df_VL_cART_initiation$pval, method = "fdr")
+df_VL_cART_initiation <- df_VL_cART_initiation[order(abs(df_VL_cART_initiation$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+
+cor.test(as.numeric(mat.transport["cg02585483_KIF2A",]), as.numeric(cl_params5.w6$VL_cART_initiation), method = "spearman") 
+cor.test(as.numeric(mat.transport["cg00589617_GALNT2",]), as.numeric(cl_params5.w6$VL_cART_initiation), method = "spearman")
+
+
+# Bind to Data 3 the values of HIV_tocART
+Data3.transport_HIV_tocART <- cbind(Data3.transport, cl_params5.w6$HIV_tocART)
+rownames(Data3.transport_HIV_tocART)
+colnames(Data3.transport_HIV_tocART) <- c(colnames(Data3.transport), "HIV_tocART")
+id2 <- colnames(Data3.transport_HIV_tocART)
+Data3.transport_HIV_tocART <- apply(Data3.transport_HIV_tocART, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with HIV_tocART
+library(Hmisc)
+res_corrHIV_tocART <- rcorr(Data3.transport_HIV_tocART,type="spearman") #Correlation between columns
+mat_corrHIV_tocART <- res_corrHIV_tocART$r
+pval_corrHIV_tocART <- res_corrHIV_tocART$P
+
+#Select all the correlations with HIV_tocART
+df_HIV_tocART <- data.frame(mat_corrHIV_tocART[nrow(mat_corrHIV_tocART),], pval_corrHIV_tocART[nrow(pval_corrHIV_tocART),])
+
+df_HIV_tocART$Name <- c(rownames(df_HIV_tocART))
+df_HIV_tocART$class <- "HIV_tocART"
+colnames(df_HIV_tocART) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of HIV_tocART with HIV_tocART, only correlations of CpG with HIV_tocART now
+df_HIV_tocART <- df_HIV_tocART[-nrow(df_HIV_tocART),]
+df_HIV_tocART$qvalue <- p.adjust(df_HIV_tocART$pval, method = "fdr")
+df_HIV_tocART <- df_HIV_tocART[order(abs(df_HIV_tocART$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(mat.transport["cg02585483_KIF2A",]), as.numeric(cl_params5.w6$HIV_tocART), method = "spearman") 
+cor.test(as.numeric(mat.transport["cg00589617_GALNT2",]), as.numeric(cl_params5.w6$HIV_tocART), method = "spearman")
+
+
+# Bind to Data 3 the values of UD_MAP
+Data3.transport_UD_MAP <- cbind(Data3.transport, cl_params5.w6$UD_MAP)
+rownames(Data3.transport_UD_MAP)
+colnames(Data3.transport_UD_MAP) <- c(colnames(Data3.transport), "UD_MAP")
+id2 <- colnames(Data3.transport_UD_MAP)
+Data3.transport_UD_MAP <- apply(Data3.transport_UD_MAP, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with UD_MAP
+library(Hmisc)
+res_corrUD_MAP <- rcorr(Data3.transport_UD_MAP,type="spearman") #Correlation between columns
+mat_corrUD_MAP <- res_corrUD_MAP$r
+pval_corrUD_MAP <- res_corrUD_MAP$P
+
+#Select all the correlations with UD_MAP
+df_UD_MAP <- data.frame(mat_corrUD_MAP[nrow(mat_corrUD_MAP),], pval_corrUD_MAP[nrow(pval_corrUD_MAP),])
+
+df_UD_MAP$Name <- c(rownames(df_UD_MAP))
+df_UD_MAP$class <- "UD_MAP"
+colnames(df_UD_MAP) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of UD_MAP with UD_MAP, only correlations of CpG with UD_MAP now
+df_UD_MAP <- df_UD_MAP[-nrow(df_UD_MAP),]
+df_UD_MAP$qvalue <- p.adjust(df_UD_MAP$pval, method = "fdr")
+df_UD_MAP <- df_UD_MAP[order(abs(df_UD_MAP$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+
+cor.test(as.numeric(mat.transport["cg02585483_KIF2A",]), as.numeric(cl_params5.w6$UD_MAP), method = "spearman") 
+cor.test(as.numeric(mat.transport["cg00589617_GALNT2",]), as.numeric(cl_params5.w6$UD_MAP), method = "spearman")
+
+
+library(dplyr)
+df_transport <- bind_rows(list(df_Proviral, df_SCA, df_CA_RNA, df_H3Ac,  df_Magnitude_HIVconsv,df_Breadth_HIVconsv, df_Magnitude_HIVtotal, df_Breadth_HIVtotal, df_VL_MAP, df_time_MAP, df_Time_on_cART_BCN02, df_VL_cART_initiation, df_HIV_tocART, df_UD_MAP))
+
+df_transport$module <- "transport"
+
+write.table(df_transport, file = "../HeatmapMeth/df_transport_new.txt", sep = "\t")
+
+```
+
+```{r}
+Rebound2 <- rownames(mat.transport2)
+Late <- grep("A02|A05|A09|B13", Rebound2)
+Rebound2[Late] <- "Late"
+Rebound2[-Late] <- "Early"
+
+Rebound.col <- rownames(mat.transport2)
+Rebound.col[Late] <- "orange"
+Rebound.col[-Late] <- "blue"
+
+df_SCA.transport <- df_SCA[colnames(mat.transport2),]
+RhoSCA.transport <- df_SCA.transport$Rho
+
+df_Proviral.transport <- df_Proviral[colnames(mat.transport2),]
+RhoProviral.transport <- df_Proviral.transport$Rho
+
+df_CA_RNA.transport <- df_CA_RNA[colnames(mat.transport2),]
+RhoCA_RNA.transport <- df_CA_RNA.transport$Rho
+
+df_H3Ac.transport <- df_H3Ac[colnames(mat.transport2),]
+RhoH3Ac.transport <- df_H3Ac.transport$Rho
+
+df_Magnitude.transport <- df_Magnitude_HIVconsv[colnames(mat.transport2),]
+RhoMagnitude.transport <- df_Magnitude.transport$Rho
+
+df_Breadth.transport <- df_Breadth_HIVconsv[colnames(mat.transport2),]
+RhoBreadth.transport <- df_Breadth.transport$Rho
+
+
+df_MagnitudeHIVtotal.transport <- df_Magnitude_HIVtotal[colnames(mat.transport2),]
+RhoMagnitudeHIVtotal.transport <- df_MagnitudeHIVtotal.transport$Rho
+
+df_BreadthHIVtotal.transport <- df_Breadth_HIVtotal[colnames(mat.transport2),]
+RhoBreadthHIVtotal.transport <- df_BreadthHIVtotal.transport$Rho
+
+
+df_VL_MAP.transport <- df_VL_MAP[colnames(mat.transport2),]
+RhoVL_MAP.transport <- df_VL_MAP.transport$Rho
+
+df_time_MAP.transport <- df_time_MAP[colnames(mat.transport2),]
+Rhotime_MAP.transport <- df_time_MAP.transport$Rho
+
+df_Time_on_cART_BCN02.transport <- df_Time_on_cART_BCN02[colnames(mat.transport2),]
+RhoTime_on_cART_BCN02.transport <- df_Time_on_cART_BCN02.transport$Rho
+
+df_VL_cART_initiation.transport <- df_VL_cART_initiation[colnames(mat.transport2),]
+RhoVL_cART_initiation.transport <- df_VL_cART_initiation.transport$Rho
+
+df_HIV_tocART.transport <- df_HIV_tocART[colnames(mat.transport2),]
+RhoHIV_tocART.transport <- df_HIV_tocART.transport$Rho
+
+df_UD_MAP.transport <- df_UD_MAP[colnames(mat.transport2),]
+RhoUD_MAP.transport <- df_UD_MAP.transport$Rho
+
+
+column_ha = HeatmapAnnotation(Rebound = Rebound2, col = list(Rebound = c("Late" = "orange", "Early" = "blue")))
+
+col_fun = colorRamp2(c(-1, 0, 1), c("red", "white", "blue")) #Viral
+col_fun1 = colorRamp2(c(-1, 0, 1), c("green", "white", "yellow")) #ICS
+col_fun2 = colorRamp2(c(-1, 0, 1), c("pink", "white", "purple")) #ELISPOTdata
+col_fun3 = colorRamp2(c(-1, 0, 1), c("orange", "white", "brown")) #
+col_fun4 = colorRamp2(c(-1, 0, 1), c("grey", "white", "darkblue")) # MAP data
+
+
+
+
+row_ha.transport = rowAnnotation(Proviral = RhoProviral.transport, SCA = RhoSCA.transport, CA_RNA = RhoCA_RNA.transport, H3Ac = RhoH3Ac.transport,  Magnitude = RhoMagnitude.transport, Breadth = RhoBreadth.transport, Magnitude_HIVtotal = RhoMagnitudeHIVtotal.transport, Breadth_HIVtotal = RhoBreadthHIVtotal.transport, VL_MAP = RhoVL_MAP.transport, time = Rhotime_MAP.transport, time_cART_BCN02_entry = RhoTime_on_cART_BCN02.transport, VL_cART_initiation = RhoVL_cART_initiation.transport, HIV_tocART = RhoHIV_tocART.transport, UD_MAP = RhoUD_MAP.transport, col = list(Proviral = col_fun, SCA = col_fun, CA_RNA = col_fun, H3Ac = col_fun, Magnitude = col_fun2, Breadth = col_fun2,Magnitude_HIVtotal = col_fun2, Breadth_HIVtotal = col_fun2, VL_MAP =col_fun4, time = col_fun4, time_cART_BCN02_entry = col_fun3, VL_cART_initiation = col_fun3, HIV_tocART =col_fun3, UD_MAP = col_fun3))
+
+
+Heatmap(t(mat.transport2), show_column_dend = FALSE,cluster_columns = FALSE,  col = colorRamp2(c(-2,2), c( c("red", "yellow"))),row_names_gp = gpar(fontsize = 7), height = unit(2.5, "mm")*nrow(t(mat.transport2)), top_annotation = column_ha, right_annotation = row_ha.transport)
+
+pdf("../HeatmapMeth/transport_Corrparams_new.pdf", height = 25, width = 10)
+
+Heatmap(t(mat.transport2), show_column_dend = FALSE,cluster_columns = FALSE,  col = colorRamp2(c(-2,2), c( c("red", "yellow"))),row_names_gp = gpar(fontsize = 7), height = unit(2.5, "mm")*nrow(t(mat.transport2)), top_annotation = column_ha, right_annotation = row_ha.transport)
+dev.off()
+
+
+```
+
+#Take all the CpGs
+```{r}
+
+library(dplyr)
+EvsLw6.HIV$annotation <-  rep("HIV", nrow(EvsLw6.HIV))
+EvsLw6.Immune$annotation <-  rep("Immune", nrow(EvsLw6.Immune))
+EvsLw6.Signaling$annotation <-  rep("Signaling", nrow(EvsLw6.Signaling))
+EvsLw6.Metabolism$annotation <-  rep("Metabolism", nrow(EvsLw6.Metabolism))
+EvsLw6.cellcycle$annotation <-  rep("cellcycle", nrow(EvsLw6.cellcycle))
+EvsLw6.transport$annotation <-  rep("transport", nrow(EvsLw6.transport))
+
+EvsLw6.annotated <- bind_rows(list(EvsLw6.HIV,EvsLw6.Immune,EvsLw6.Signaling,
+                                   EvsLw6.Metabolism, EvsLw6.cellcycle,EvsLw6.transport))
+
+write.table(EvsLw6.annotated, file = "../HeatmapMeth/Heatmap_EvsLw6_DMPs_new.txt", sep = "\t")
+```
+
+#Vertical heatmap complex
+
+```{r}
+
+
+Rebound2 <- rownames(mat.HIV2)
+Late <- grep("A02|A05|A09|B13", Rebound2)
+Rebound2[Late] <- "Late"
+Rebound2[-Late] <- "Early"
+
+Rebound.col <- rownames(mat.HIV2)
+Rebound.col[Late] <- "orange"
+Rebound.col[-Late] <- "blue"
+
+
+col_fun = colorRamp2(c(-1, 0, 1), c("red", "white", "blue")) #Viral
+col_fun1 = colorRamp2(c(-1, 0, 1), c("green", "white", "yellow")) #elispot data
+col_fun3 = colorRamp2(c(-1, 0, 1), c("orange", "white", "brown")) # MAP Data
+col_fun4 = colorRamp2(c(-1, 0, 1), c("grey", "white", "darkblue")) #BCN02 Data
+
+
+column_ha = HeatmapAnnotation(Rebound = Rebound2, col = list(Rebound = c("Late" = "orange", "Early" = "blue")))
+
+
+
+row_ha.HIV = rowAnnotation(H3Ac = RhoH3Ac.HIV, Proviral = RhoProviral.HIV, SCA = RhoSCA.HIV, CA_RNA = RhoCA_RNA.HIV, Magnitude = RhoMagnitude.HIV, Breadth = RhoBreadth.HIV, Magnitude_HIVtotal = RhoMagnitudeHIVtotal.HIV, Breadth_HIVtotal = RhoBreadthHIVtotal.HIV, VL_MAP = RhoVL_MAP.HIV, time_MAP = Rhotime_MAP.HIV, UD_MAP = RhoUD_MAP.HIV, VL_cART_initiation.HIV = RhoVL_cART_initiation.HIV,HIV_to_cART = RhoHIV_tocART.HIV, Time_on_cART_BCN02 = RhoTime_on_cART_BCN02.HIV, col = list(H3Ac = col_fun, Proviral = col_fun, SCA = col_fun, CA_RNA = col_fun, Magnitude = col_fun1, Breadth = col_fun1, Magnitude_HIVtotal = col_fun1, Breadth_HIVtotal = col_fun1, VL_MAP =col_fun3, time_MAP = col_fun3, UD_MAP = col_fun3, VL_cART_initiation.HIV = col_fun4 ,HIV_to_cART = col_fun4, Time_on_cART_BCN02 =col_fun4), show_annotation_name = FALSE, show_legend = FALSE)
+
+
+
+
+ht1 <- Heatmap(t(mat.HIV2), show_column_dend = FALSE, cluster_columns = FALSE, col = colorRamp2(c(-2,2), c( c("red", "yellow"))),row_names_gp = gpar(fontsize = 7.5), height = unit(2.5, "mm")*nrow(t(mat.HIV2)), top_annotation = column_ha,right_annotation = row_ha.HIV ,show_heatmap_legend = FALSE)
+
+
+
+row_ha.Immune = rowAnnotation(H3Ac = RhoH3Ac.Immune, Proviral = RhoProviral.Immune, SCA = RhoSCA.Immune, CA_RNA = RhoCA_RNA.Immune, Magnitude = RhoMagnitude.Immune, Breadth = RhoBreadth.Immune, Magnitude_HIVtotal = RhoMagnitudeHIVtotal.Immune, Breadth_HIVtotal = RhoBreadthHIVtotal.Immune, VL_MAP = RhoVL_MAP.Immune, time_MAP = Rhotime_MAP.Immune, UD_MAP = RhoUD_MAP.Immune, VL_cART_initiation.Immune = RhoVL_cART_initiation.Immune,HIV_to_cART = RhoHIV_tocART.Immune, Time_on_cART_BCN02 = RhoTime_on_cART_BCN02.Immune, col = list(H3Ac = col_fun, Proviral = col_fun, SCA = col_fun, CA_RNA = col_fun, Magnitude = col_fun1, Breadth = col_fun1, Magnitude_HIVtotal = col_fun1, Breadth_HIVtotal = col_fun1, VL_MAP =col_fun3, time_MAP = col_fun3, UD_MAP = col_fun3, VL_cART_initiation.Immune = col_fun4 ,HIV_to_cART = col_fun4, Time_on_cART_BCN02 =col_fun4), show_annotation_name = FALSE, show_legend = FALSE)
+
+
+
+ht2 <- Heatmap(t(mat.Immune2), show_column_dend = FALSE, cluster_columns = FALSE,  col = colorRamp2(c(-2,2), c( c("red", "yellow"))),row_names_gp = gpar(fontsize = 7.5), height = unit(2.5, "mm")*nrow(t(mat.Immune2)), right_annotation = row_ha.Immune, show_heatmap_legend = FALSE)
+
+
+row_ha.Metabolism = rowAnnotation(H3Ac = RhoH3Ac.Metabolism, Proviral = RhoProviral.Metabolism, SCA = RhoSCA.Metabolism, CA_RNA = RhoCA_RNA.Metabolism, Magnitude = RhoMagnitude.Metabolism, Breadth = RhoBreadth.Metabolism, Magnitude_HIVtotal = RhoMagnitudeHIVtotal.Metabolism, Breadth_HIVtotal = RhoBreadthHIVtotal.Metabolism, VL_MAP = RhoVL_MAP.Metabolism, time_MAP = Rhotime_MAP.Metabolism, UD_MAP = RhoUD_MAP.Metabolism, VL_cART_initiation.Metabolism = RhoVL_cART_initiation.Metabolism,HIV_to_cART = RhoHIV_tocART.Metabolism, Time_on_cART_BCN02 = RhoTime_on_cART_BCN02.Metabolism, col = list(H3Ac = col_fun, Proviral = col_fun, SCA = col_fun, CA_RNA = col_fun, Magnitude = col_fun1, Breadth = col_fun1, Magnitude_HIVtotal = col_fun1, Breadth_HIVtotal = col_fun1, VL_MAP =col_fun3, time_MAP = col_fun3, UD_MAP = col_fun3, VL_cART_initiation.Metabolism = col_fun4 ,HIV_to_cART = col_fun4, Time_on_cART_BCN02 =col_fun4), show_annotation_name = FALSE, show_legend = FALSE)
+
+ht3 <- Heatmap(t(mat.Metabolism2), show_column_dend = FALSE,cluster_columns = FALSE,   col = colorRamp2(c(-2,2), c( c("red", "yellow"))),row_names_gp = gpar(fontsize = 7.5), height = unit(2.5, "mm")*nrow(t(mat.Metabolism2)),right_annotation = row_ha.Metabolism, show_heatmap_legend = FALSE)
+
+
+row_ha.cellcycle = rowAnnotation(H3Ac = RhoH3Ac.cellcycle, Proviral = RhoProviral.cellcycle, SCA = RhoSCA.cellcycle, CA_RNA = RhoCA_RNA.cellcycle, Magnitude = RhoMagnitude.cellcycle, Breadth = RhoBreadth.cellcycle, Magnitude_HIVtotal = RhoMagnitudeHIVtotal.cellcycle, Breadth_HIVtotal = RhoBreadthHIVtotal.cellcycle, VL_MAP = RhoVL_MAP.cellcycle, time_MAP = Rhotime_MAP.cellcycle, UD_MAP = RhoUD_MAP.cellcycle, VL_cART_initiation.cellcycle = RhoVL_cART_initiation.cellcycle,HIV_to_cART = RhoHIV_tocART.cellcycle, Time_on_cART_BCN02 = RhoTime_on_cART_BCN02.cellcycle, col = list(H3Ac = col_fun, Proviral = col_fun, SCA = col_fun, CA_RNA = col_fun, Magnitude = col_fun1, Breadth = col_fun1, Magnitude_HIVtotal = col_fun1, Breadth_HIVtotal = col_fun1, VL_MAP =col_fun3, time_MAP = col_fun3, UD_MAP = col_fun3, VL_cART_initiation.cellcycle = col_fun4 ,HIV_to_cART = col_fun4, Time_on_cART_BCN02 =col_fun4), show_annotation_name = FALSE, show_legend = FALSE)
+
+
+ht4 <- Heatmap(t(mat.cellcycle2), show_column_dend = FALSE, cluster_columns = FALSE,  col = colorRamp2(c(-2,2), c( c("red", "yellow"))),row_names_gp = gpar(fontsize = 7.5), height = unit(2.5, "mm")*nrow(t(mat.cellcycle2)), right_annotation = row_ha.cellcycle, show_heatmap_legend = FALSE)
+
+
+row_ha.Signaling = rowAnnotation(H3Ac = RhoH3Ac.Signaling, Proviral = RhoProviral.Signaling, SCA = RhoSCA.Signaling, CA_RNA = RhoCA_RNA.Signaling, Magnitude = RhoMagnitude.Signaling, Breadth = RhoBreadth.Signaling, Magnitude_HIVtotal = RhoMagnitudeHIVtotal.Signaling, Breadth_HIVtotal = RhoBreadthHIVtotal.Signaling, VL_MAP = RhoVL_MAP.Signaling, time_MAP = Rhotime_MAP.Signaling, UD_MAP = RhoUD_MAP.Signaling, VL_cART_initiation.Signaling = RhoVL_cART_initiation.Signaling,HIV_to_cART = RhoHIV_tocART.Signaling, Time_on_cART_BCN02 = RhoTime_on_cART_BCN02.Signaling, col = list(H3Ac = col_fun, Proviral = col_fun, SCA = col_fun, CA_RNA = col_fun, Magnitude = col_fun1, Breadth = col_fun1, Magnitude_HIVtotal = col_fun1, Breadth_HIVtotal = col_fun1, VL_MAP =col_fun3, time_MAP = col_fun3, UD_MAP = col_fun3, VL_cART_initiation.Signaling = col_fun4 ,HIV_to_cART = col_fun4, Time_on_cART_BCN02 =col_fun4), show_annotation_name = FALSE, show_legend = FALSE)
+
+ht5 <- Heatmap(t(mat.Signaling2), show_column_dend = FALSE, cluster_columns = FALSE,  col = colorRamp2(c(-2,2), c( c("red", "yellow"))),row_names_gp = gpar(fontsize = 7.5), height = unit(2.5, "mm")*nrow(t(mat.Signaling2)), right_annotation = row_ha.Signaling, show_heatmap_legend = FALSE)
+
+row_ha.transport = rowAnnotation(H3Ac = RhoH3Ac.transport, Proviral = RhoProviral.transport, SCA = RhoSCA.transport, CA_RNA = RhoCA_RNA.transport, Magnitude = RhoMagnitude.transport, Breadth = RhoBreadth.transport, Magnitude_HIVtotal = RhoMagnitudeHIVtotal.transport, Breadth_HIVtotal = RhoBreadthHIVtotal.transport, VL_MAP = RhoVL_MAP.transport, time_MAP = Rhotime_MAP.transport, UD_MAP = RhoUD_MAP.transport, VL_cART_initiation.transport = RhoVL_cART_initiation.transport,HIV_to_cART = RhoHIV_tocART.transport, Time_on_cART_BCN02 = RhoTime_on_cART_BCN02.transport, col = list(H3Ac = col_fun, Proviral = col_fun, SCA = col_fun, CA_RNA = col_fun, Magnitude = col_fun1, Breadth = col_fun1, Magnitude_HIVtotal = col_fun1, Breadth_HIVtotal = col_fun1, VL_MAP =col_fun3, time_MAP = col_fun3, UD_MAP = col_fun3, VL_cART_initiation.transport = col_fun4 ,HIV_to_cART = col_fun4, Time_on_cART_BCN02 =col_fun4),  show_legend = FALSE)
+
+
+ht6 <- Heatmap(t(mat.transport2), show_column_dend = FALSE,  col = colorRamp2(c(-2,2), c( c("red", "yellow"))),row_names_gp = gpar(fontsize = 7.5), height = unit(2.5, "mm")*nrow(t(mat.transport2)), right_annotation = row_ha.transport,show_heatmap_legend = FALSE)
+
+
+
+
+ht_list = ht1 %v% ht2 %v% ht3 %v% ht4 %v% ht5 %v% ht6
+
+pdf("../HeatmapMeth/ComplexHeatmap_EvsLDMPs_new.pdf", height = 25, width = 10)
+draw(ht_list)
+dev.off()
+
+
+png("../HeatmapMeth/ComplexHeatmap_EvsLDMPs_new.png", height = 25, width = 10, units = "in", res = 600)
+draw(ht_list)
+dev.off()
+
+```
+
+
+#Correlations
+```{r}
+df_HIV <- read.table(file = "../HeatmapMeth/df_HIV_new.txt", sep = "\t")
+df_Immune <- read.table(file = "../HeatmapMeth/df_Immune_new.txt", sep = "\t")
+df_Metabolism <- read.table(file = "../HeatmapMeth/df_Metabolism_new.txt", sep = "\t")
+df_cellcycle <- read.table(file = "../HeatmapMeth/df_cellcycle_new.txt", sep = "\t")
+df_Signaling <- read.table(file = "../HeatmapMeth/df_Signaling_new.txt", sep = "\t")
+df_transport <- read.table(file = "../HeatmapMeth/df_transport_new.txt", sep = "\t")
+
+library(tidyverse)
+df_corr_w6 <- bind_rows(df_HIV , df_Immune, df_Metabolism, df_cellcycle, df_Signaling, df_transport)
+write.table(df_corr_w6 , file  ="../HeatmapMeth/df_corrw6_new.txt", sep = "\t" )
+write.csv(df_corr_w6 , file  ="../HeatmapMeth/df_corrw6_new.csv" )
+
+```

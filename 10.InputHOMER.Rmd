@@ -1,0 +1,597 @@
+---
+title: "Prepare input HOMER"
+author: "Bruna Oriol"
+date: "18/1/2021"
+output: html_document
+---
+
+
+## DMPs w6-w0
+We want to identify enrichmnet of TFs according the CpG sites that are DMP w6-w0 or EvsL at w6.
+
+For data input no rownames in .txt files. Only the required columns: CpG, chr, start, end and strand
+```{r}
+rm(list = ls())
+library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+library(tidyverse)
+
+DMPsw6w0 <- read.table("../Meth/Analysis450K/OutputFiles/DMPs_weeks/LimmaBlockAnnot/ w6vsw0.txt")
+DMPsw6w0.sig <- subset(DMPsw6w0, DMPsw6w0$P.Value<0.05)
+ann450k <- getAnnotation(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+ann450k <- as.data.frame(ann450k)
+
+CpGs <- as.character(DMPsw6w0.sig$Row.names)
+length(CpGs)
+dim(ann450k)
+
+Backgroundw6w0 <-  ann450k[-which(rownames(ann450k)%in% CpGs),]
+
+
+DMPsw6w0.sig.ann <- cbind(DMPsw6w0.sig[,1:7], ann450k[as.character(DMPsw6w0.sig$Row.names),])
+
+HOMER.Input <- data.frame(DMPsw6w0.sig.ann$Row.names, DMPsw6w0.sig.ann$chr, DMPsw6w0.sig.ann$pos, DMPsw6w0.sig.ann$pos+1, DMPsw6w0.sig.ann$strand)
+HOMER.Bg <- data.frame(rownames(Backgroundw6w0), Backgroundw6w0$chr, Backgroundw6w0$pos, Backgroundw6w0$pos+1, Backgroundw6w0$strand)
+
+colnames(HOMER.Input) <- c("CpG", "chr", "start", "end", "strand")
+colnames(HOMER.Bg) <- c("CpG", "chr", "start", "end", "strand")
+
+write.table(HOMER.Input, file = "../Meth/HOMERres_2/DMPsw6w0_450Khomer.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+write.table(HOMER.Bg , file = "../Meth/HOMERres_2/bg450_w6w0.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+```
+
+##Make it separately for hyper/hypo
+
+```{r}
+
+Hyper_w6 <-DMPsw6w0.sig.ann %>% filter(logFC > 0)
+Hyper_w6$end <- Hyper_w6$pos+1
+HOMER.Hyper_w6 <- Hyper_w6  %>% select(Row.names, chr, pos, end, strand)
+colnames(HOMER.Hyper_w6 ) <- c("CpG", "chr", "start", "end", "strand")
+write.table(HOMER.Hyper_w6, file = "../Meth/HOMERres_2/HOMER.Hyper_w6.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+Hypo_w6 <-DMPsw6w0.sig.ann %>% filter(logFC < 0)
+Hypo_w6$end <- Hypo_w6$pos+1
+HOMER.Hypo_w6 <- Hypo_w6  %>% select(Row.names, chr, pos, end, strand)
+colnames(HOMER.Hypo_w6 ) <- c("CpG", "chr", "start", "end", "strand")
+write.table(HOMER.Hypo_w6, file = "../Meth/HOMERres_2/HOMER.Hypo_w6.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+
+```
+
+
+```{r}
+int <- intersect(rownames(Hyper_w6),HOMER.Bg$CpG)
+int <- intersect(rownames(Hypo_w6),HOMER.Bg$CpG)
+
+```
+
+
+## DMPs w1-w0
+We want to identify enrichmnet of TFs according the CpG sites that are DMP w1-w0 or EvsL at w1.
+
+For data input no rownames in .txt files. Only the required columns: CpG, chr, start, end and strand
+```{r}
+rm(list = ls())
+library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+library(tidyverse)
+
+DMPsw1w0 <- read.table("../Meth/Analysis450K/OutputFiles/DMPs_weeks2/LimmaBlockAnnot/ w1vsw0.txt")
+DMPsw1w0.sig <- subset(DMPsw1w0, DMPsw1w0$P.Value<0.05)
+
+ann450k<-getAnnotation(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+ann450k<-as.data.frame(ann450k)
+
+CpGs <- as.character(DMPsw1w0.sig$Row.names)
+Backgroundw1w0 <-  ann450k[-which(rownames(ann450k)%in% CpGs),]
+
+DMPsw1w0.sig.ann <- cbind(DMPsw1w0.sig[,1:7], ann450k[as.character(DMPsw1w0.sig$Row.names),])
+
+HOMER.Input <- data.frame(DMPsw1w0.sig.ann$Row.names, DMPsw1w0.sig.ann$chr, DMPsw1w0.sig.ann$pos, DMPsw1w0.sig.ann$pos+1, DMPsw1w0.sig.ann$strand)
+HOMER.Bg <- data.frame(rownames(Backgroundw1w0), Backgroundw1w0$chr, Backgroundw1w0$pos, Backgroundw1w0$pos+1, Backgroundw1w0$strand)
+
+colnames(HOMER.Input) <- c("CpG", "chr", "start", "end", "strand")
+colnames(HOMER.Bg) <- c("CpG", "chr", "start", "end", "strand")
+
+write.table(HOMER.Input, file = "../Meth/HOMERres_2/DMPsw1w0_450Khomer.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+write.table(HOMER.Bg , file = "../Meth/HOMERres_2/bg450_w1w0.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+```
+
+##Make it separately for hyper/hypo
+
+```{r}
+
+Hyper_w1 <-DMPsw1w0.sig.ann %>% filter(logFC > 0)
+Hyper_w1$end <- Hyper_w1$pos+1
+HOMER.Hyper_w1 <- Hyper_w1  %>% select(Row.names, chr, pos, end, strand)
+colnames(HOMER.Hyper_w1 ) <- c("CpG", "chr", "start", "end", "strand")
+write.table(HOMER.Hyper_w1, file = "../Meth/HOMERres_2/HOMER.Hyper_w1.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+
+Hypo_w1 <-DMPsw1w0.sig.ann %>% filter(logFC < 0)
+Hypo_w1$end <- Hypo_w1$pos+1
+HOMER.Hypo_w1 <- Hypo_w1  %>% select(Row.names, chr, pos, end, strand)
+colnames(HOMER.Hypo_w1 ) <- c("CpG", "chr", "start", "end", "strand")
+write.table(HOMER.Hypo_w1, file = "../Meth/HOMERres_2/HOMER.Hypo_w1.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+
+```
+
+
+
+## DMPs w6 EvsL
+We want to identify enrichmnet of TFs according the CpG sites that are DMP w6-w0 or EvsL at w6.
+
+For data input no rownames in .txt files. Only the required columns: CpG, chr, start, end and strand
+```{r}
+rm(list = ls())
+library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+library(tidyverse)
+
+DMPsw6_EvsL <- read.table("../Meth/Analysis450K/OutputFiles/DMPs_rb/LimmaBlockAnnot/ w6_FastvsLate.txt")
+DMPsw6_EvsL.sig <- subset(DMPsw6_EvsL, DMPsw6_EvsL$P.Value<0.05)
+
+ann450k<-getAnnotation(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+ann450k<-as.data.frame(ann450k)
+
+CpGs <- as.character(DMPsw6_EvsL.sig$Row.names)
+Backgroundw6_EvsL <-  ann450k[-which(rownames(ann450k) %in% CpGs),]
+
+DMPsw6_EvsL.sig.ann <- cbind(DMPsw6_EvsL.sig[,1:7], ann450k[as.character(DMPsw6_EvsL.sig$Row.names),])
+
+HOMER.Input <- data.frame(DMPsw6_EvsL.sig.ann$Row.names, DMPsw6_EvsL.sig.ann$chr, DMPsw6_EvsL.sig.ann$pos, DMPsw6_EvsL.sig.ann$pos+1, DMPsw6_EvsL.sig.ann$strand)
+
+HOMER.Bg <- data.frame(rownames(Backgroundw6_EvsL), Backgroundw6_EvsL$chr, Backgroundw6_EvsL$pos, Backgroundw6_EvsL$pos+1, Backgroundw6_EvsL$strand)
+
+colnames(HOMER.Input) <- c("CpG", "chr", "start", "end", "strand")
+colnames(HOMER.Bg) <- c("CpG", "chr", "start", "end", "strand")
+
+write.table(HOMER.Input, file = "../Meth/HOMERres_2/DMPsw6_EvsL_450Khomer.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+write.table(HOMER.Bg , file = "../Meth/HOMERres_2/bg450_w6_EvsL.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+
+```
+
+##Make it separately for hyper/hypo
+
+```{r}
+
+Hyper_w6_EvsL <-DMPsw6_EvsL.sig.ann %>% filter(logFC > 0)
+Hyper_w6_EvsL$end <- Hyper_w6_EvsL$pos+1
+HOMER.Hyper_w6_EvsL <- Hyper_w6_EvsL  %>% select(Row.names, chr, pos, end, strand)
+colnames(HOMER.Hyper_w6_EvsL ) <- c("CpG", "chr", "start", "end", "strand")
+write.table(HOMER.Hyper_w6_EvsL, file = "../Meth/HOMERres_2/HOMER.Hyper_w6_EvsL.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+
+Hypo_w6_EvsL <-DMPsw6_EvsL.sig.ann %>% filter(logFC < 0)
+Hypo_w6_EvsL$end <- Hypo_w6_EvsL$pos+1
+HOMER.Hypo_w6_EvsL <- Hypo_w6_EvsL  %>% select(Row.names, chr, pos, end, strand)
+colnames(HOMER.Hypo_w6_EvsL ) <- c("CpG", "chr", "start", "end", "strand")
+write.table(HOMER.Hypo_w6_EvsL, file = "../Meth/HOMERres_2/HOMER.Hypo_w6_EvsL.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+
+```
+
+
+
+## DMPs w0 EvsL
+We want to identify enrichmnet of TFs according the CpG sites that are DMP w0-w0 or EvsL at w0.
+
+For data input no rownames in .txt files. Only the required columns: CpG, chr, start, end and strand
+```{r}
+rm(list = ls())
+library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+library(tidyverse)
+
+DMPsw0_EvsL <- read.table("../Meth/Analysis450K/OutputFiles/DMPs_rb/LimmaBlockAnnot/ w0_FastvsLate.txt")
+DMPsw0_EvsL.sig <- subset(DMPsw0_EvsL, DMPsw0_EvsL$P.Value<0.05)
+
+ann450k<-getAnnotation(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+ann450k<-as.data.frame(ann450k)
+
+CpGs <- as.character(DMPsw0_EvsL.sig$Row.names)
+Backgroundw0_EvsL <-  ann450k[-which(rownames(ann450k) %in% CpGs),]
+
+DMPsw0_EvsL.sig.ann <- cbind(DMPsw0_EvsL.sig[,1:7], ann450k[as.character(DMPsw0_EvsL.sig$Row.names),])
+
+HOMER.Input <- data.frame(DMPsw0_EvsL.sig.ann$Row.names, DMPsw0_EvsL.sig.ann$chr, DMPsw0_EvsL.sig.ann$pos, DMPsw0_EvsL.sig.ann$pos+1, DMPsw0_EvsL.sig.ann$strand)
+
+HOMER.Bg <- data.frame(rownames(Backgroundw0_EvsL), Backgroundw0_EvsL$chr, Backgroundw0_EvsL$pos, Backgroundw0_EvsL$pos+1, Backgroundw0_EvsL$strand)
+
+colnames(HOMER.Input) <- c("CpG", "chr", "start", "end", "strand")
+colnames(HOMER.Bg) <- c("CpG", "chr", "start", "end", "strand")
+
+write.table(HOMER.Input, file = "../Meth/HOMERres_2/DMPsw0_EvsL_450Khomer.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+write.table(HOMER.Bg , file = "../Meth/HOMERres_2/bg450_w0_EvsL.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+```
+
+## Make it separately for hyper/hypo
+
+```{r}
+
+Hyper_w0_EvsL <-DMPsw0_EvsL.sig.ann %>% filter(logFC > 0)
+Hyper_w0_EvsL$end <- Hyper_w0_EvsL$pos+1
+HOMER.Hyper_w0_EvsL <- Hyper_w0_EvsL  %>% select(Row.names, chr, pos, end, strand)
+colnames(HOMER.Hyper_w0_EvsL ) <- c("CpG", "chr", "start", "end", "strand")
+write.table(HOMER.Hyper_w0_EvsL, file = "../Meth/HOMERres_2/HOMER.Hyper_w0_EvsL.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+
+Hypo_w0_EvsL <-DMPsw0_EvsL.sig.ann %>% filter(logFC < 0)
+Hypo_w0_EvsL$end <- Hypo_w0_EvsL$pos+1
+HOMER.Hypo_w0_EvsL <- Hypo_w0_EvsL  %>% select(Row.names, chr, pos, end, strand)
+colnames(HOMER.Hypo_w0_EvsL ) <- c("CpG", "chr", "start", "end", "strand")
+write.table(HOMER.Hypo_w0_EvsL, file = "../Meth/HOMERres_2/HOMER.Hypo_w0_EvsL.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+
+```
+
+
+
+## DMPs w1 EvsL
+We want to identify enrichmnet of TFs according the CpG sites that are DMP w1-w1 or EvsL at w1.
+
+For data input no rownames in .txt files. Only the required columns: CpG, chr, start, end and strand
+```{r}
+rm(list = ls())
+library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+library(tidyverse)
+
+DMPsw1_EvsL <- read.table("../Meth/Analysis450K/OutputFiles/DMPs_rb3/LimmaBlockAnnot/ w1_FastvsLate.txt")
+DMPsw1_EvsL.sig <- subset(DMPsw1_EvsL, DMPsw1_EvsL$P.Value<0.05)
+
+ann450k<-getAnnotation(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+ann450k<-as.data.frame(ann450k)
+
+CpGs <- as.character(DMPsw1_EvsL.sig$Row.names)
+Backgroundw1_EvsL <-  ann450k[-which(rownames(ann450k) %in% CpGs),]
+
+DMPsw1_EvsL.sig.ann <- cbind(DMPsw1_EvsL.sig[,1:7], ann450k[as.character(DMPsw1_EvsL.sig$Row.names),])
+
+HOMER.Input <- data.frame(DMPsw1_EvsL.sig.ann$Row.names, DMPsw1_EvsL.sig.ann$chr, DMPsw1_EvsL.sig.ann$pos, DMPsw1_EvsL.sig.ann$pos+1, DMPsw1_EvsL.sig.ann$strand)
+
+HOMER.Bg <- data.frame(rownames(Backgroundw1_EvsL), Backgroundw1_EvsL$chr, Backgroundw1_EvsL$pos, Backgroundw1_EvsL$pos+1, Backgroundw1_EvsL$strand)
+
+colnames(HOMER.Input) <- c("CpG", "chr", "start", "end", "strand")
+colnames(HOMER.Bg) <- c("CpG", "chr", "start", "end", "strand")
+
+write.table(HOMER.Input, file = "../Meth/HOMERres_2/DMPsw1_EvsL_450Khomer.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+write.table(HOMER.Bg , file = "../Meth/HOMERres_2/bg450_w1_EvsL.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+```
+
+## Make it separately for hyper/hypo
+
+```{r}
+
+Hyper_w1_EvsL <-DMPsw1_EvsL.sig.ann %>% filter(logFC > 0)
+Hyper_w1_EvsL$end <- Hyper_w1_EvsL$pos+1
+HOMER.Hyper_w1_EvsL <- Hyper_w1_EvsL  %>% select(Row.names, chr, pos, end, strand)
+colnames(HOMER.Hyper_w1_EvsL ) <- c("CpG", "chr", "start", "end", "strand")
+write.table(HOMER.Hyper_w1_EvsL, file = "../Meth/HOMERres_2/HOMER.Hyper_w1_EvsL.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+
+Hypo_w1_EvsL <-DMPsw1_EvsL.sig.ann %>% filter(logFC < 0)
+Hypo_w1_EvsL$end <- Hypo_w1_EvsL$pos+1
+HOMER.Hypo_w1_EvsL <- Hypo_w1_EvsL  %>% select(Row.names, chr, pos, end, strand)
+colnames(HOMER.Hypo_w1_EvsL ) <- c("CpG", "chr", "start", "end", "strand")
+write.table(HOMER.Hypo_w1_EvsL, file = "../Meth/HOMERres_2/HOMER.Hypo_w1_EvsL.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+
+```
+
+
+
+#New for DEG
+
+## DEGs w6-w0
+We want to identify enrichmnet of TFs according the CpG sites that are DEG w6-w0 or EvsL at w6.
+
+
+```{r}
+rm(list = ls())
+
+library(Homo.sapiens)
+locations = genes(Homo.sapiens, columns=c("SYMBOL", "ENSEMBL", "ENSEMBLTRANS"))
+locations = as.data.frame(locations)
+head(locations)
+
+
+
+
+DEGsw6w0 <- read.table("../RNASeq/DEGweeks/LimmaBlock w6vsw0.txt")
+DEGsw6w0$Gene <- sapply(strsplit(rownames(DEGsw6w0), ","), function(x) x[2])
+DEGsw6w0$Biotype <- sapply(strsplit(rownames(DEGsw6w0), ","), function(x) x[3])
+DEGsw6w0$SYMBOL <- DEGsw6w0$Gene
+locationsDEG <-  subset(locations, locations$SYMBOL %in% DEGsw6w0$Gene)
+
+
+DEGsw6w0.m <- merge(DEGsw6w0, locationsDEG, id = "SYMBOL")
+
+
+
+DEGsw6w0.sig <- subset(DEGsw6w0.m, DEGsw6w0.m$P.Value<0.05)
+int <- intersect(rownames(DEGsw6w0.m), rownames(DEGsw6w0.sig))
+Backgroundw6w0 <- DEGsw6w0.m [-which(rownames(DEGsw6w0.sig) %in% int),]
+
+
+HOMER.Input <- data.frame(DEGsw6w0.sig$SYMBOL, DEGsw6w0.sig$seqnames, DEGsw6w0.sig$start, DEGsw6w0.sig$end, DEGsw6w0.sig$strand)
+HOMER.Bg <-data.frame(Backgroundw6w0$SYMBOL, Backgroundw6w0$seqnames, Backgroundw6w0$start, Backgroundw6w0$end, Backgroundw6w0$strand)
+
+colnames(HOMER.Input) <- c("Symbol", "chr", "start", "end", "strand")
+colnames(HOMER.Bg) <- c("Symbol", "chr", "start", "end", "strand")
+
+dir.create("../RNASeq/HOMERres_new")
+write.table(HOMER.Input, file = "../RNASeq/HOMERres_new/DEGsw6w0homer.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+write.table(HOMER.Bg , file = "../RNASeq/HOMERres_new/bgsw6w0homer.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+```
+
+## Make it separately for hyper/hypo
+
+```{r}
+library(tidyverse)
+Up_w6 <-DEGsw6w0.sig %>% filter(logFC > 0)
+HOMER.Up_w6 <- Up_w6  %>% select(SYMBOL, seqnames, start, end, strand)
+colnames(HOMER.Up_w6  ) <- c("Symbol", "chr", "start", "end", "strand")
+write.table(HOMER.Up_w6, file = "../RNASeq/HOMERres_new/HOMER.Up_w6.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+library(tidyverse)
+Down_w6 <-DEGsw6w0.sig %>% filter(logFC < 0)
+HOMER.Down_w6 <- Down_w6  %>% select(SYMBOL, seqnames, start, end, strand)
+colnames(HOMER.Down_w6  ) <- c("Symbol", "chr", "start", "end", "strand")
+write.table(HOMER.Down_w6, file = "../RNASeq/HOMERres_new/HOMER.Down_w6.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+```
+
+
+
+
+
+#New for DEG
+
+## DEGs w1-w0
+We want to identify enrichmnet of TFs according the CpG sites that are DEG w1-w0 or EvsL at w1.
+
+
+```{r}
+rm(list = ls())
+
+library(Homo.sapiens)
+locations = genes(Homo.sapiens, columns=c("SYMBOL", "ENSEMBL", "ENSEMBLTRANS"))
+locations = as.data.frame(locations)
+head(locations)
+
+
+
+
+DEGsw1w0 <- read.table("../RNASeq/DEGweek1/LimmaBlock w1vsw0.txt")
+DEGsw1w0$Gene <- sapply(strsplit(rownames(DEGsw1w0), ","), function(x) x[2])
+DEGsw1w0$Biotype <- sapply(strsplit(rownames(DEGsw1w0), ","), function(x) x[3])
+DEGsw1w0$SYMBOL <- DEGsw1w0$Gene
+locationsDEG <-  subset(locations, locations$SYMBOL %in% DEGsw1w0$Gene)
+
+DEGsw1w0.m <- merge(DEGsw1w0, locationsDEG, id = "SYMBOL")
+
+
+
+DEGsw1w0.sig <- subset(DEGsw1w0.m, DEGsw1w0.m$P.Value<0.05)
+int <- intersect(rownames(DEGsw1w0.m), rownames(DEGsw1w0.sig))
+Backgroundw1w0 <- DEGsw1w0.m [-which(rownames(DEGsw1w0.sig) %in% int),]
+
+
+HOMER.Input <- data.frame(DEGsw1w0.sig$SYMBOL, DEGsw1w0.sig$seqnames, DEGsw1w0.sig$start, DEGsw1w0.sig$end, DEGsw1w0.sig$strand)
+HOMER.Bg <-data.frame(Backgroundw1w0$SYMBOL, Backgroundw1w0$seqnames, Backgroundw1w0$start, Backgroundw1w0$end, Backgroundw1w0$strand)
+
+colnames(HOMER.Input) <- c("Symbol", "chr", "start", "end", "strand")
+colnames(HOMER.Bg) <- c("Symbol", "chr", "start", "end", "strand")
+
+dir.create("../RNASeq/HOMERres")
+write.table(HOMER.Input, file = "../RNASeq/HOMERres/DEGsw1w0homer.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+write.table(HOMER.Bg , file = "../RNASeq/HOMERres/bgsw1w0homer.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+```
+
+## Make it separately for hyper/hypo
+
+```{r}
+library(tidyverse)
+Up_w1 <-DEGsw1w0.sig %>% filter(logFC > 0)
+HOMER.Up_w1 <- Up_w1  %>% select(SYMBOL, seqnames, start, end, strand)
+colnames(HOMER.Up_w1  ) <- c("Symbol", "chr", "start", "end", "strand")
+write.table(HOMER.Up_w1, file = "../RNASeq/HOMERres/HOMER.Up_w1.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+library(tidyverse)
+Down_w1 <-DEGsw1w0.sig %>% filter(logFC < 0)
+HOMER.Down_w1 <- Down_w1  %>% select(SYMBOL, seqnames, start, end, strand)
+colnames(HOMER.Down_w1  ) <- c("Symbol", "chr", "start", "end", "strand")
+write.table(HOMER.Down_w1, file = "../RNASeq/HOMERres/HOMER.Down_w1.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+```
+
+## DEGs EvsL - at week 6
+
+
+```{r}
+rm(list = ls())
+
+library(Homo.sapiens)
+locations = genes(Homo.sapiens, columns=c("SYMBOL", "ENSEMBL", "ENSEMBLTRANS"))
+locations = as.data.frame(locations)
+head(locations)
+
+
+
+
+DEGs_w6Rb <- read.table("../RNASeq/DEGRb/LimmaBlock w6_EarlyvsLate.txt")
+DEGs_w6Rb$Gene <- sapply(strsplit(rownames(DEGs_w6Rb), ","), function(x) x[2])
+DEGs_w6Rb$Biotype <- sapply(strsplit(rownames(DEGs_w6Rb), ","), function(x) x[3])
+DEGs_w6Rb$SYMBOL <- DEGs_w6Rb$Gene
+locationsDEG <-  subset(locations, locations$SYMBOL %in% DEGs_w6Rb$Gene)
+
+
+DEGs_w6Rb.m <- merge(DEGs_w6Rb, locationsDEG, id = "SYMBOL")
+
+
+
+DEGs_w6Rb.sig <- subset(DEGs_w6Rb.m, DEGs_w6Rb.m$P.Value<0.05)
+int <- intersect(rownames(DEGs_w6Rb.m), rownames(DEGs_w6Rb.sig))
+Backgroundw6w0 <- DEGs_w6Rb.m [-which(rownames(DEGs_w6Rb.sig) %in% int),]
+
+
+HOMER.Input <- data.frame(DEGs_w6Rb.sig$SYMBOL, DEGs_w6Rb.sig$seqnames, DEGs_w6Rb.sig$start, DEGs_w6Rb.sig$end, DEGs_w6Rb.sig$strand)
+HOMER.Bg <-data.frame(Backgroundw6w0$SYMBOL, Backgroundw6w0$seqnames, Backgroundw6w0$start, Backgroundw6w0$end, Backgroundw6w0$strand)
+
+colnames(HOMER.Input) <- c("Symbol", "chr", "start", "end", "strand")
+colnames(HOMER.Bg) <- c("Symbol", "chr", "start", "end", "strand")
+
+dir.create("../RNASeq/HOMERres")
+write.table(HOMER.Input, file = "../RNASeq/HOMERres/DEGs_w6Rbhomer.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+write.table(HOMER.Bg , file = "../RNASeq/HOMERres/bgsw6Rbhomer.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+```
+
+## Make it separately for hyper/hypo
+
+```{r}
+library(tidyverse)
+Up_w6Rb <-DEGs_w6Rb.sig %>% filter(logFC > 0)
+HOMER.Up_w6Rb <- Up_w6Rb  %>% select(SYMBOL, seqnames, start, end, strand)
+colnames(HOMER.Up_w6Rb  ) <- c("Symbol", "chr", "start", "end", "strand")
+write.table(HOMER.Up_w6Rb, file = "../RNASeq/HOMERres/HOMER.UpEvsL_w6.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+library(tidyverse)
+Down_w6Rb <-DEGs_w6Rb.sig %>% filter(logFC < 0)
+HOMER.Down_w6Rb <- Down_w6Rb  %>% select(SYMBOL, seqnames, start, end, strand)
+colnames(HOMER.Down_w6Rb  ) <- c("Symbol", "chr", "start", "end", "strand")
+write.table(HOMER.Down_w6Rb, file = "../RNASeq/HOMERres/HOMER.DownEvsL_w6.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+```
+
+
+
+
+
+# REDUC
+## DEGs pre post RMD
+We want to identify enrichmnet of TFs according the CpG sites that are DEG w1-w0 or EvsL at w1.
+
+
+```{r}
+rm(list = ls())
+
+library(Homo.sapiens)
+locations = genes(Homo.sapiens, columns=c("SYMBOL", "ENSEMBL", "ENSEMBLTRANS"))
+locations = as.data.frame(locations)
+head(locations)
+
+
+DEGsprepost <- read.table("../REDUC/PBMC/tables/DEG_v9v1PBMC.txt")
+DEGsprepost$Gene <- sapply(strsplit(rownames(DEGsprepost), ","), function(x) x[2])
+DEGsprepost$Biotype <- sapply(strsplit(rownames(DEGsprepost), ","), function(x) x[3])
+DEGsprepost$SYMBOL <-DEGsprepost$Gene
+locationsDEG <-  subset(locations, locations$SYMBOL %in% DEGsprepost$Gene)
+
+DEGsprepost.m <- merge(DEGsprepost, locationsDEG, id = "SYMBOL")
+
+
+
+DEGsprepost.sig <- subset(DEGsprepost.m, DEGsprepost.m$P.Value<0.05)
+int <- intersect(rownames(DEGsprepost.m), rownames(DEGsprepost.sig))
+BackgroundREDUC <- DEGsprepost.m [-which(rownames(DEGsprepost.sig) %in% int),]
+
+
+HOMER.Input <- data.frame(DEGsprepost.sig$SYMBOL, DEGsprepost.sig$seqnames, DEGsprepost.sig$start, DEGsprepost.sig$end, DEGsprepost.sig$strand)
+HOMER.Bg <-data.frame(BackgroundREDUC$SYMBOL, BackgroundREDUC$seqnames, BackgroundREDUC$start, BackgroundREDUC$end, BackgroundREDUC$strand)
+
+colnames(HOMER.Input) <- c("Symbol", "chr", "start", "end", "strand")
+colnames(HOMER.Bg) <- c("Symbol", "chr", "start", "end", "strand")
+
+dir.create("../RNASeq/HOMERresREDUC")
+write.table(HOMER.Input, file = "../RNASeq/HOMERresREDUC/DEGsREDUC.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+write.table(HOMER.Bg , file = "../RNASeq/HOMERresREDUC/BackgroundREDUC.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+```
+
+
+##Make it separately for hyper/hypo
+
+```{r}
+library(tidyverse)
+library(dplyr)
+Up_REDUC <- DEGsprepost.sig %>% filter(logFC > 0)
+HOMER.Up_REDUC <- Up_REDUC  %>% dplyr::select(SYMBOL, seqnames, start, end, strand)
+colnames(HOMER.Up_REDUC ) <- c("Symbol", "chr", "start", "end", "strand")
+write.table(HOMER.Up_REDUC, file = "../RNASeq/HOMERresREDUC/DEGs_UP_REDUC.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+Down_REDUC <-DEGsprepost.sig %>% filter(logFC < 0)
+HOMER.Down_REDUC <- Down_REDUC  %>% dplyr::select(SYMBOL, seqnames, start, end, strand)
+colnames(HOMER.Down_REDUC) <- c("Symbol", "chr", "start", "end", "strand")
+write.table(HOMER.Down_REDUC, file = "../RNASeq/HOMERresREDUC/DEGs_Down_REDUC.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+
+```
+
+
+## DEGs pre post RMD CD4
+We want to identify enrichmnet of TFs according the CpG sites that are DEG w1-w0 or EvsL at w1.
+
+
+```{r}
+rm(list = ls())
+
+library(Homo.sapiens)
+locations = genes(Homo.sapiens, columns=c("SYMBOL", "ENSEMBL", "ENSEMBLTRANS"))
+locations = as.data.frame(locations)
+head(locations)
+
+
+
+
+DEGsprepost <- read.table("../REDUC/CD4/tables/DEG_v9v1CD4.txt")
+DEGsprepost$Gene <- sapply(strsplit(rownames(DEGsprepost), ","), function(x) x[2])
+DEGsprepost$Biotype <- sapply(strsplit(rownames(DEGsprepost), ","), function(x) x[3])
+DEGsprepost$SYMBOL <-DEGsprepost$Gene
+locationsDEG <-  subset(locations, locations$SYMBOL %in% DEGsprepost$Gene)
+
+DEGsprepost.m <- merge(DEGsprepost, locationsDEG, id = "SYMBOL")
+
+
+
+DEGsprepost.sig <- subset(DEGsprepost.m, DEGsprepost.m$P.Value<0.05)
+int <- intersect(rownames(DEGsprepost.m), rownames(DEGsprepost.sig))
+BackgroundREDUC <- DEGsprepost.m [-which(rownames(DEGsprepost.sig) %in% int),]
+
+
+HOMER.Input <- data.frame(DEGsprepost.sig$SYMBOL, DEGsprepost.sig$seqnames, DEGsprepost.sig$start, DEGsprepost.sig$end, DEGsprepost.sig$strand)
+HOMER.Bg <-data.frame(BackgroundREDUC$SYMBOL, BackgroundREDUC$seqnames, BackgroundREDUC$start, BackgroundREDUC$end, BackgroundREDUC$strand)
+
+colnames(HOMER.Input) <- c("Symbol", "chr", "start", "end", "strand")
+colnames(HOMER.Bg) <- c("Symbol", "chr", "start", "end", "strand")
+
+dir.create("../RNASeq/HOMERresREDUC")
+write.table(HOMER.Input, file = "../RNASeq/HOMERresREDUC/DEGsREDUC_CD4.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+write.table(HOMER.Bg , file = "../RNASeq/HOMERresREDUC/BackgroundREDUC_CD4.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+```
+
+
+## Make it separately for hyper/hypo
+
+```{r}
+library(tidyverse)
+Up_REDUC <- DEGsprepost.sig %>% filter(logFC > 0)
+HOMER.Up_REDUC <- Up_REDUC  %>% dplyr::select(SYMBOL, seqnames, start, end, strand)
+colnames(HOMER.Up_REDUC ) <- c("Symbol", "chr", "start", "end", "strand")
+write.table(HOMER.Up_REDUC, file = "../RNASeq/HOMERresREDUC/DEGs_UP_REDUC_CD4.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+library(tidyverse)
+Down_REDUC <-DEGsprepost.sig %>% filter(logFC < 0)
+HOMER.Down_REDUC <- Down_REDUC  %>% dplyr::select(SYMBOL, seqnames, start, end, strand)
+colnames(HOMER.Down_REDUC) <- c("Symbol", "chr", "start", "end", "strand")
+write.table(HOMER.Down_REDUC, file = "../RNASeq/HOMERresREDUC/DEGs_Down_REDUC_CD4.txt", sep = "\t", quote = FALSE, row.names = FALSE )
+
+
+```
+

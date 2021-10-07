@@ -1,0 +1,874 @@
+---
+title: "Methylation"
+author: "Bruna Oriol"
+date: "6/4/2020"
+output: html_document
+---
+
+# 1. Methylation Analysis of EPIC Array
+```{r, message=FALSE, warning=FALSE}
+rm(list=ls())
+
+#Need to load libraries
+library(minfi)
+library(minfiData)
+library(ChAMP)
+library(reshape)
+library(ggplot2)
+library(lumi)
+library(limma)
+library(dplyr)
+library(dendextend)
+library(gplots)
+library(RColorBrewer)
+library(IlluminaHumanMethylationEPICanno.ilm10b2.hg19)
+library(gtools)
+library(sva)
+library(MASS)
+library(ggplot2)
+library(ggrepel)
+library(dendextend)
+library(mixOmics)
+library(FactoMineR)
+library(factoextra)
+
+```
+
+## 2.1.Read 450K Data 
+```{r, eval = FALSE}
+# Annotation
+annEPIC<-getAnnotation(IlluminaHumanMethylationEPICanno.ilm10b2.hg19)
+annEPIC <- as.data.frame(annEPIC)
+
+write.table(annEPIC, file = "../Meth/AnalysisEPIC/annotEPIC.txt" )
+```
+
+
+```{r, eval=FALSE}
+#Read EPIC microarray intensity files
+# myLoadEPIC <- champ.load(directory = "../../BCN02_Omics_paper/Meth/EPIC", methValue = "B", method = "minfi", filterXY = FALSE)
+# RGSetEPIC <- myLoadEPIC$rgSet # Contains the raw intensities in the green and red channels.
+# MSetEPIC <- myLoadEPIC$mset # Contains the methylated and unmethylated signals
+# PDataEPIC <- myLoadEPIC$pd # Contains the arraZy associated metadata
+```
+
+```{r}
+
+#Save the different objects.
+#save(myLoadEPIC, RGSetEPIC, MSetEPIC, PDataEPIC, file = "../Meth/AnalysisEPIC/RData/myLoadEPIC.RData")
+
+load("../Meth/AnalysisEPIC/RData/myLoadEPIC.RData")
+```
+
+
+
+```{r}
+
+pd <- pData(RGSetEPIC) # Get the array associated metadata and convert it to data frame. 
+Pheno <- data.frame(pd) 
+dim(Pheno) #42 x 10 : 10 columns with array metadata. This is information from the sample sheet. 
+
+### QC Report with Minfi
+qcReport(RGSetEPIC, pdf = "../Meth/AnalysisEPIC/QCPlots/QC_EPIC.pdf")
+
+### Read Phenotype Data: this is information we provide. 
+
+PhenoEPIC <- read.csv(file = "../Meth/Info/targetsEPIC.csv") 
+#Colnames:
+  ##Sample name:The name of the DNA Sample (1,2,3, etc.)
+  ## Ind_time: Individual + week ifnormation
+  ## Individual: There are 15 individuals A02, etc.
+  ## Week: Different timepoints: w0, w1, w6, w10.
+  ## Rebound: Early/Late rebound
+
+
+```
+
+
+##2.2. Get Raw Beta values for methylation
+
+```{r}
+
+#Make sure there is the samer order in both df
+int <- intersect(Pheno$Sample_Name, PhenoEPIC$Sample_Name)
+PhenoEPIC <- PhenoEPIC[match(int, PhenoEPIC$Sample_Name),]
+
+#Change rownames: put it as A02.w0, etc.
+rownames(PhenoEPIC) <- paste(as.character(PhenoEPIC$Individual), as.character(PhenoEPIC$Week), sep = ".")
+rownames(Pheno) <- rownames(PhenoEPIC)
+
+Pheno <- cbind(Pheno, PhenoEPIC[,c(2,3,4,5,6)])
+write.table(Pheno, file = "../Meth/AnalysisEPIC/PhenoEPIC.txt", sep = "\t", quote = F)
+
+#Get Betas
+RGSet.names <- data.frame(colnames(RGSetEPIC), Pheno$Sample_Name )
+colnames(RGSetEPIC) <- rownames(Pheno)
+df <- data.frame(colnames(RGSetEPIC), rownames(Pheno)) # verify same order
+
+##Raw Betas
+Beta.raw <- getBeta(RGSetEPIC)
+colnames(Beta.raw)
+write.table(Beta.raw, file = "../Meth/AnalysisEPIC/RawBeta.txt")
+```
+
+
+
+### 2.2.1 Exploratory Data Analysis - Raw Data
+```{r}
+rm(list = ls())
+
+
+Beta.raw <- read.table("../Meth/AnalysisEPIC/RawBeta.txt")
+Pheno <- read.delim("../Meth/AnalysisEPIC/PhenoEPIC.txt")
+
+#MDS Raw Data
+d <- dist(t(Beta.raw)) # euclidean distances between the rows (samples)
+fit <- cmdscale(d,eig=TRUE, k=4) # k is the number of dim
+
+df_fit <- data.frame(fit$points) 
+df_fit$Name <- sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )
+
+
+#Make groups according week
+
+df_fit$groups <- Pheno$Week
+
+#Define plot theme
+theme_MDS <- theme(panel.background = element_blank(),
+             panel.border=element_rect(fill=NA),
+             panel.grid.major = element_blank(),
+             panel.grid.minor = element_blank(),
+             strip.background=element_blank(),
+             axis.text.x=element_text(colour="black"),
+             axis.text.y=element_text(colour="black"),
+             axis.ticks=element_line(colour="black"),
+             plot.margin=unit(c(1,1,1,1),"line"))
+
+p<-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= Name))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS  + xlab("Coordinate 1") + ylab("Coordinate 2")
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= Name))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS + xlab("Coordinate 1") + ylab("Coordinate 3")
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS + xlab("Coordinate 2") + ylab("Coordinate 3")
+
+
+
+#According rebound
+unique(df_fit$Name)
+groups <- rownames(df_fit)
+Early <- grep("A12|A14|B06|A04|A13|A15|B05|B10|B14", groups)
+Late <- grep("A02|A05|A09|B13", groups)
+B03 <- grep("B03", groups)
+B07 <- grep("B07", groups)
+
+
+groups[Early] <- "Early"
+groups[Late] <- "Late"
+groups[B03] <- "B03"
+groups[B07] <- "B07"
+
+
+df_fit$groups <- groups
+df_fit$groups <- factor(df_fit$groups, levels = c("Early", "Late", "B03", "B07"))
+
+
+
+
+p <-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme_MDS + xlab("Coordinate 1") + ylab("Coordinate 2")
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS + xlab("Coordinate 1") + ylab("Coordinate 3")
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS + xlab("Coordinate 2") + ylab("Coordinate 3")
+
+
+
+#Hospital
+df_fit$groups <- Pheno$Hospital
+
+p <-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme_MDS + xlab("Coordinate 1") + ylab("Coordinate 2")
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS + xlab("Coordinate 1") + ylab("Coordinate 3")
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS + xlab("Coordinate 2") + ylab("Coordinate 3")
+
+
+```
+
+
+```{r}
+
+# Remove the Only woman of the study and make the plots again:
+
+Beta.raw2 <- Beta.raw[, -grep("A14",colnames(Beta.raw))]
+Pheno2 <- Pheno[-grep("A14",rownames(Pheno)),]
+
+
+#MDS Raw Data
+
+d <- dist(t(Beta.raw2)) # euclidean distances between the rows
+fit <- cmdscale(d,eig=TRUE, k=4) # k is the number of dim
+
+df_fit <- data.frame(fit$points) 
+df_fit$Name <- sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )
+
+
+#According week
+groups <- Pheno2$Week
+
+
+df_fit$groups <- groups
+df_fit$groups <- factor(df_fit$groups, levels = c("preCART", "MAP", "w24"))
+
+
+p<-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= Name))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS  + xlab("Coordinate 1") + ylab("Coordinate 2")
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= Name))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS + xlab("Coordinate 1") + ylab("Coordinate 3")
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS + xlab("Coordinate 2") + ylab("Coordinate 3")
+
+
+
+#According rebound
+unique(df_fit$Name)
+groups <- rownames(df_fit)
+Early <- grep("A12|A14|B06|A04|A13|A15|B05|B10|B14", groups)
+Late <- grep("A02|A05|A09|B13", groups)
+B07 <-  grep("B07", groups)
+B03 <- grep("B03", groups)
+
+
+groups[Early] <- "Early"
+groups[Late] <- "Late"
+groups[B03] <- "B03"
+groups[B07] <- "B07"
+
+
+df_fit$groups <- groups
+df_fit$groups <- factor(df_fit$groups, levels = c("Early", "Late", "B03", "B07"))
+
+
+p <-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme_MDS + xlab("Coordinate 1") + ylab("Coordinate 2")
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS + xlab("Coordinate 1") + ylab("Coordinate 3")
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS + xlab("Coordinate 2") + ylab("Coordinate 3")
+
+
+```
+
+### Estimate cell counts
+```{r}
+rm(list = ls())
+load("../Meth/AnalysisEPIC/RData/myLoadEPIC.RData")
+Pheno <- read.delim("../Meth/AnalysisEPIC/PhenoEPIC.txt")
+Pheno2 <- Pheno[-grep("A14",rownames(Pheno)),] # remove the woman
+WBCest <- estimateCellCounts(RGSetEPIC)
+WBCest.df  <- as.data.frame(WBCest)
+setdiff(rownames(WBCest.df), Pheno$Sample_Name)
+rownames(WBCest.df ) <- rownames(Pheno)
+Pheno.WBCEst <- cbind(Pheno, WBCest.df)
+write.table(Pheno.WBCEst , "../Meth/AnalysisEPIC/PhenoWBCest.txt")
+Pheno.WBCEst.EvsL <- Pheno.WBCEst[-grep("A14|B03|B07", rownames(Pheno.WBCEst)),]
+write.table(Pheno.WBCEst.EvsL , "../Meth/AnalysisEPIC/PhenoWBCest_EvsL.txt")
+
+
+```
+
+
+## 2.3 Normalization - Quantile Normalization
+
+```{r}
+rm(list = ls())
+
+Pheno <- read.delim("../Meth/AnalysisEPIC/PhenoEPIC.txt")
+PhenoWBCest <- read.table("../Meth/AnalysisEPIC/PhenoWBCest.txt")
+
+Pheno2 <- Pheno[-grep("A14",rownames(Pheno)),] # remove the woman
+load("../Meth/AnalysisEPIC/RData/myLoadEPIC.RData")
+
+#Remove the only woman of the study to avoid sex confounding.
+colnames(RGSetEPIC) <- Pheno$Ind_time # change the name to A02.w0,etc.
+dim(RGSetEPIC)
+RGSetEPIC.1 <- RGSetEPIC[,-grep("A14", colnames(RGSetEPIC))]
+dim(RGSetEPIC.1)
+
+Pheno2$Ind_time <- factor(Pheno2$Ind_time, levels = unique(as.character(Pheno$Ind_time)))
+Pheno2$Individual <- factor(Pheno2$Individual, levels = unique(as.character(Pheno$Individual)))
+
+  
+#Normalization (Quantile Norm)
+Betas.QN.GenomicRS <- preprocessQuantile(RGSetEPIC.1)
+Betas.QN <- getBeta(Betas.QN.GenomicRS)
+
+write.table(Betas.QN, file = "../Meth/AnalysisEPIC/BetasQN.txt")
+
+```
+
+```{r}
+#Exploratory analysis normalized data.
+#Correlation with cell type
+
+PCA.BetasQN <- prcomp(t(Betas.QN))
+PCAs_1_15 <- PCA.BetasQN$x[,seq(1,15)]
+phenotype <- PhenoWBCest[,seq(11,21)]
+phenotype$Hospital <- factor(phenotype$Hospital, levels = c("HC","HUGTIP"), labels = c(0,1))
+phenotype$Rebound <- factor(phenotype$Rebound, levels = c("Fast","Late"), labels = c(0,1))
+phenotype.1 <- phenotype[, seq(6, 11)]
+dim(PhenoWBCest)
+dim(phenotype.1)
+phenotype.1 <- phenotype.1[-grep("A14", phenotype$Individual),]
+
+
+PCAs_1_15.preCART <- PCAs_1_15[grep("preCART", rownames(PCAs_1_15)),]
+pheno.preCART <- phenotype.1[grep("preCART", rownames(PCAs_1_15)),]
+cor.vector <- NULL
+app.preCART <- apply(PCAs_1_15.preCART, 2, function(x){
+  for (i in 1:ncol(pheno.preCART)){
+    covariate <- pheno.preCART[,i]
+    c <- cor(x = x, y = covariate, method = "spearman")
+    cor.vector <- c(cor.vector,c)
+    
+  }
+  return(cor.vector)
+})
+cor_df.preCART <- data.frame(app.preCART)
+rownames(cor_df.preCART) <- colnames(pheno.preCART)
+cor_df.preCART
+cor_df.preCART.1 <- abs(cor_df.preCART)
+
+library(pheatmap)
+pheatmap(cor_df.preCART.1, cluster_rows = FALSE, cluster_cols = FALSE, 
+         breaks = seq(0,1,0.1), 
+         color = colorRampPalette(c("blue", "red"))(10), filename = "../Meth/AnalysisEPIC/QCPlots/PCAsPheatmap_preCART_today.pdf")
+
+
+
+
+
+
+PCAs_1_15.MAP <- PCAs_1_15[grep("MAP", rownames(PCAs_1_15)),]
+pheno.MAP <- phenotype.1[grep("MAP", rownames(PCAs_1_15)),]
+cor.vector <- NULL
+app.MAP <- apply(PCAs_1_15.MAP, 2, function(x){
+  for (i in 1:ncol(pheno.MAP)){
+    covariate <- pheno.MAP[,i]
+    c <- cor(x = x, y = covariate, method = "spearman")
+    cor.vector <- c(cor.vector, c)
+    
+  }
+  return(cor.vector)
+})
+cor_df.MAP <- data.frame(app.MAP)
+rownames(cor_df.MAP) <- colnames(pheno.MAP)
+cor_df.MAP
+cor_df.MAP.1 <- abs(cor_df.MAP)
+
+library(pheatmap)
+pheatmap(cor_df.MAP.1, cluster_rows = FALSE, cluster_cols = FALSE, 
+         breaks = seq(0,1,0.1), 
+         color = colorRampPalette(c("blue", "red"))(10), filename = "../Meth/AnalysisEPIC/QCPlots/PCAsPheatmap_MAP_today.pdf")
+
+
+
+
+
+PCAs_1_15.w24 <- PCAs_1_15[grep("w24", rownames(PCAs_1_15)),]
+pheno.w24 <- phenotype.1[grep("w24", rownames(PCAs_1_15)),]
+cor.vector <- NULL
+app.w24 <- apply(PCAs_1_15.w24, 2, function(x){
+  for (i in 1:ncol(pheno.w24)){
+    covariate <- pheno.w24[,i]
+    c <- cor(x = x, y = covariate, method = "spearman")
+    cor.vector <- c(cor.vector, c)
+    
+  }
+  return(cor.vector)
+})
+cor_df.w24 <- data.frame(app.w24)
+rownames(cor_df.w24) <- colnames(pheno.w24)
+cor_df.w24
+cor_df.w24.1 <- abs(cor_df.w24)
+
+library(pheatmap)
+pheatmap(cor_df.w24.1, cluster_rows = FALSE, cluster_cols = FALSE, 
+         breaks = seq(0,1,0.1), 
+         color = colorRampPalette(c("blue", "red"))(10), filename = "../Meth/AnalysisEPIC/QCPlots/PCAsPheatmap_w24_today.pdf")
+
+
+
+
+#Boxplot per week
+PhenoWBCest$Week <- factor(PhenoWBCest$Week, levels = c("preCART", "MAP", "w24"))
+boxplot(CD8T ~ Week, PhenoWBCest)
+kruskal.test(CD8T ~ Week, PhenoWBCest) #ns
+boxplot(CD4T ~ Week, PhenoWBCest)
+kruskal.test(CD4T ~ Week, PhenoWBCest)#ns
+boxplot(NK ~ Week, PhenoWBCest)
+kruskal.test(NK ~ Week, PhenoWBCest)#ns
+boxplot(Bcell ~ Week, PhenoWBCest)
+kruskal.test(Bcell ~ Week, PhenoWBCest)#ns
+boxplot(Mono ~ Week, PhenoWBCest)
+kruskal.test(Mono ~ Week, PhenoWBCest)#ns
+boxplot(Gran ~ Week, PhenoWBCest)
+kruskal.test(Gran~ Week, PhenoWBCest)#ns
+
+
+#Reb
+
+Pheno.WBCEst.EvsL <-PhenoWBCest[-grep("B03|B07|A14", PhenoWBCest$Individual),]
+p <- ggplot(Pheno.WBCEst.EvsL, aes(x=Week, y = CD8T, fill = Rebound))
+p + geom_boxplot(outlier.color = "transparent")
+p <- ggplot(Pheno.WBCEst.EvsL, aes(x=Week, y = CD4T, fill = Rebound))
+p + geom_boxplot(outlier.color = "transparent")
+p <- ggplot(Pheno.WBCEst.EvsL, aes(x=Week, y = NK, fill = Rebound))
+p + geom_boxplot(outlier.color = "transparent")
+p <- ggplot(Pheno.WBCEst.EvsL, aes(x=Week, y = Bcell, fill = Rebound))
+p + geom_boxplot(outlier.color = "transparent")
+p <- ggplot(Pheno.WBCEst.EvsL, aes(x=Week, y = Mono, fill = Rebound))
+p + geom_boxplot(outlier.color = "transparent")
+p <- ggplot(Pheno.WBCEst.EvsL, aes(x=Week, y = Gran, fill = Rebound))
+p + geom_boxplot(outlier.color = "transparent")
+
+
+
+Pheno.preCART <- subset(Pheno.WBCEst.EvsL, Pheno.WBCEst.EvsL$Week == "preCART") #ns
+wilcox.test(CD8T ~ Rebound, Pheno.preCART)  
+wilcox.test(CD4T ~ Rebound, Pheno.preCART) 
+wilcox.test(NK ~ Rebound, Pheno.preCART) 
+wilcox.test(Bcell ~ Rebound, Pheno.preCART) 
+wilcox.test(Mono ~ Rebound, Pheno.preCART) 
+wilcox.test(Gran ~ Rebound, Pheno.preCART) 
+
+Pheno.MAP <- subset(Pheno.WBCEst.EvsL, Pheno.WBCEst.EvsL$Week == "MAP") #ns
+wilcox.test(CD8T ~ Rebound, Pheno.MAP) 
+wilcox.test(CD4T ~ Rebound, Pheno.MAP) 
+wilcox.test(NK ~ Rebound, Pheno.MAP) 
+wilcox.test(Bcell ~ Rebound, Pheno.MAP) 
+wilcox.test(Mono ~ Rebound, Pheno.MAP) 
+wilcox.test(Gran ~ Rebound, Pheno.MAP) 
+
+
+Pheno.w24 <- subset(Pheno.WBCEst.EvsL, Pheno.WBCEst.EvsL$Week == "w24") #ns
+wilcox.test(CD8T ~ Rebound, Pheno.w24) 
+wilcox.test(CD4T ~ Rebound, Pheno.w24) 
+wilcox.test(NK ~ Rebound, Pheno.w24) 
+wilcox.test(Bcell ~ Rebound, Pheno.w24) 
+wilcox.test(Mono ~ Rebound, Pheno.w24) 
+wilcox.test(Gran ~ Rebound, Pheno.w24) 
+
+
+
+```
+
+###2.3.1 Exploratory Analysis 
+
+#### Density Plots
+
+```{r}
+
+densityPlot(as.matrix(Betas.QN), Pheno2$Rebound )
+colourCount = length(unique(Pheno2$Individual))
+getPalette = colorRampPalette(brewer.pal(8, "Dark2"))
+densityPlot(as.matrix(Betas.QN), Pheno2$Individual , pal = getPalette(colourCount))
+densityPlot(as.matrix(Betas.QN), Pheno2$Week )
+densityPlot(as.matrix(Betas.QN), Pheno2$Slide )
+densityPlot(as.matrix(Betas.QN), Pheno2$Hospital)
+
+```
+
+#### Boxplots
+
+```{r}
+
+boxplot(Betas.QN, main = "Betas QN", las = 2, cex = 0.5)
+
+```
+
+#### MDS
+```{r}
+
+#MDS NORMALIZED (Beta Quantiles) data
+
+d <- dist(t(Betas.QN)) # euclidean distances between the rows
+fit <- cmdscale(d,eig=TRUE, k=4) # k is the number of dim
+
+df_fit <- data.frame(fit$points) 
+df_fit$Name <- sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )
+
+
+#According week
+df_fit$groups <- Pheno2$Week
+df_fit$groups <- factor(df_fit$groups, levels = c("preCART", "MAP", "w24"))
+
+#Define plot theme
+theme <- theme(panel.background = element_blank(),
+             panel.border=element_rect(fill=NA),
+             panel.grid.major = element_blank(),
+             panel.grid.minor = element_blank(),
+             strip.background=element_blank(),
+             axis.text.x=element_text(colour="black"),
+             axis.text.y=element_text(colour="black"),
+             axis.ticks=element_line(colour="black"),
+             plot.margin=unit(c(1,1,1,1),"line"))
+
+
+
+p<-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= Name))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= Name))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= Name ))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+
+
+#According rebound
+unique(df_fit$Name)
+groups <- rownames(df_fit)
+Early <- grep("A12|A14|B06|A04|A13|A15|B05|B10|B14", groups)
+Late <- grep("A02|A05|A09|B13", groups)
+B03 <- grep("B03", groups)
+B07 <- grep("B07", groups)
+
+
+groups[Early] <- "Early"
+groups[Late] <- "Late"
+groups[B03] <- "B03"
+groups[B07] <- "B07"
+
+
+df_fit$groups <- groups
+df_fit$groups <- factor(df_fit$groups, levels = c("Early", "Late", "B03", "B07"))
+
+
+
+p <- ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p + geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+
+p <- ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p + geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+
+p <- ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p + geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+
+
+```
+
+#### MDS QN per weeks (Evaluate Reb)
+```{r}
+rm(list = ls())
+dir.create("../Meth/AnalysisEPIC/QCPlots/week_individually")
+Bval.QN <- read.table("../Meth/AnalysisEPIC/BetasQN.txt") 
+dim(Bval.QN) #485512     56
+
+
+Pheno <- read.delim("../Meth/AnalysisEPIC/PhenoEPIC.txt")
+Pheno2 <- Pheno[-grep("A14",rownames(Pheno)),]
+
+
+Pheno2$Rebound <- factor(Pheno2$Rebound, levels = c("Fast", "Late", "Out"))
+Pheno2[which(Pheno2$Individual == "B03"),]$Rebound <- "Out"
+
+
+Bval.QN.preCART <- Bval.QN[, grep("preCART", colnames(Bval.QN))]
+Bval.QN.MAP <- Bval.QN[, grep("MAP", colnames(Bval.QN))]
+Bval.QN.w24 <- Bval.QN[, grep("w24", colnames(Bval.QN))]
+
+Pheno2.preCART <- Pheno2[grep("preCART", Pheno2$Week), ]
+Pheno2.MAP <- Pheno2[grep("MAP", Pheno2$Week), ]
+Pheno2.w24 <- Pheno2[grep("w24", Pheno2$Week), ]
+
+#Define plot theme
+theme <- theme(panel.background = element_blank(),
+             panel.border=element_rect(fill=NA),
+             panel.grid.major = element_blank(),
+             panel.grid.minor = element_blank(),
+             strip.background=element_blank(),
+             axis.text.x=element_text(colour="black"),
+             axis.text.y=element_text(colour="black"),
+             axis.ticks=element_line(colour="black"),
+             plot.margin=unit(c(1,1,1,1),"line"))
+
+
+
+#preCART
+d <- dist(t(Bval.QN.preCART)) # euclidean distances between the rows
+fit <- cmdscale(d,eig=TRUE, k=4) # k is the number of dim
+
+df_fit <- data.frame(fit$points) 
+df_fit$Name <- sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )
+df_fit$groups <- Pheno2.preCART$Rebound
+
+p<-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+p + stat_ellipse() + ggtitle("preCART")
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+p + stat_ellipse() + ggtitle("preCART")
+
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+p + stat_ellipse() + ggtitle("preCART")
+
+
+
+
+#MAP
+
+d <- dist(t(Bval.QN.MAP)) # euclidean distances between the rows
+fit <- cmdscale(d,eig=TRUE, k=4) # k is the number of dim
+
+df_fit <- data.frame(fit$points) 
+df_fit$Name <- sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )
+df_fit$groups <- Pheno2.MAP$Rebound
+
+p<-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+p + stat_ellipse() + ggtitle("MAP")
+
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+p + stat_ellipse() + ggtitle("MAP")
+
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+p + stat_ellipse() + ggtitle("MAP")
+
+
+#w24
+d <- dist(t(Bval.QN.w24)) # euclidean distances betw24een the row24s
+fit <- cmdscale(d,eig=TRUE, k=4) # k is the number of dim
+
+df_fit <- data.frame(fit$points) 
+df_fit$Name <- sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )
+df_fit$groups <- Pheno2.w24$Rebound
+
+p<-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+p + stat_ellipse() + ggtitle("w24")
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+p + stat_ellipse() + ggtitle("w24")
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+p + stat_ellipse() + ggtitle("w24")
+
+
+```
+
+###2.3.3 Non-specific Filtering
+In this case we take the proves at percential 0.75, therefore the 25% of most variables probes. 
+
+```{r}
+# M with more variable pos.
+rm(list = ls())
+Bval.QN <- read.table("../Meth/AnalysisEPIC/BetasQN.txt") 
+dim(Bval.QN) #865859     30
+Mval.QN <- beta2m(Bval.QN)
+
+sd <- apply(Mval.QN, 1, sd)
+plot(density(sd, na.rm = T))
+hist(sd)
+
+
+sd.o <- sort(sd) #order sd increasing
+sd.o_df <- data.frame(sd.o)
+head(sd.o_df)
+tail(sd.o_df)
+
+# plot sd results tp decide cut-off. 
+png("../Meth/AnalysisEPIC/QCPlots/sd_Combat.png", res = 300, width = 3, height =3, units = "in",   pointsize = 5)
+plot(sd.o)
+abline(h=quantile(sd.o, probs=0.25), col = "red")
+abline(h=quantile(sd.o, probs=0.75), col = "blue")
+abline(h=quantile(sd.o, probs=0.80), col = "orange")
+abline(h=quantile(sd.o, probs=0.90), col = "yellow")
+abline(h=quantile(sd.o, probs=0.95), col = "pink")
+legend(100, 2.5, legend = c("P25", "P75", "P80", "P90", "P95"), col=c("red", "blue", "orange", "yellow", "pink"), lty =1)
+dev.off()
+
+
+CpGVariable <- sd.o[which(sd.o >quantile(sd.o, probs=0.75))]
+length(CpGVariable) #216465
+head(CpGVariable)
+
+
+Mval.QN1 <- Mval.QN[names(CpGVariable),]
+dim(Mval.QN) #485512     56
+dim(Mval.QN1) # 121378     56
+Bvalues.QN1 <- m2beta(Mval.QN1)
+
+write.table(Mval.QN1, file = "../Meth/AnalysisEPIC/QNMval_sel.txt")
+write.table(Bvalues.QN1, file = "../Meth/AnalysisEPIC/QNBetaval_sel.txt")
+
+
+```
+
+##3. Identify DMPs with Limma - Weeks
+
+```{r}
+
+dir.create("../Meth/AnalysisEPIC/OutputFiles")
+dir.create("../Meth/AnalysisEPIC/OutputFiles/DMPs_weeks")
+dir.create("../Meth/AnalysisEPIC/OutputFiles/DMPs_weeks/LimmaBlock")
+dir.create("../Meth/AnalysisEPIC/OutputFiles/DMPs_weeks/LimmaBlockAnnot")
+dir.create("../Meth/AnalysisEPIC/OutputFiles/DMPs_weeks/LimmaBlockAnnot/adjpval")
+
+
+
+rm(list = ls())
+
+Mval.QN1 <- read.table("../Meth/AnalysisEPIC/QNMval_sel.txt")
+Pheno <- read.delim("../Meth/AnalysisEPIC/PhenoEPIC.txt")
+Pheno2 <- Pheno[-grep("A14",rownames(Pheno)),]
+PhenoWBCEst <- read.table("../Meth/AnalysisEPIC/PhenoWBCest.txt")
+PhenoWBCEst <- PhenoWBCEst[-grep("A14", rownames(PhenoWBCEst)),]
+dim(Pheno2)
+dim(PhenoWBCEst)
+
+
+# Read annEPIC
+annEPIC <- read.table("../Meth/AnalysisEPIC/annotEPIC.txt")
+
+# Limma Model
+Week <- factor(PhenoWBCEst$Week, levels = c("preCART", "MAP", "w24"))
+
+
+mod1 <- model.matrix(~0 + Week)
+
+colnames(mod1)=levels(Week)
+
+
+
+contr.matrix_week_1 <- makeContrasts(
+  
+  MAPvspreCART = MAP - preCART,
+  w24vspreCART = w24 - preCART,
+  w24vsMAP = w24 - MAP,
+  
+  levels=colnames(mod1))
+
+cor1 <- duplicateCorrelation(Mval.QN1,mod1,block=PhenoWBCEst$Individual)
+fit=lmFit(Mval.QN1,mod1, block=PhenoWBCEst$Individual, correlation=cor1$consensus)
+
+
+## SIMPLE COMPARISON
+fit1=contrasts.fit(fit, contrasts=contr.matrix_week_1)
+fit1.2=eBayes(fit1)
+summary(decideTests(fit1.2))
+
+
+#All CpGs
+for (i in  colnames(fit1.2$coefficients)){
+  toptable <-  topTable(fit1.2, coef=i, sort="p", n=Inf, adjust = "BH")
+  write.table( toptable, paste(paste("../Meth/AnalysisEPIC/OutputFiles/DMPs_weeks/LimmaBlock/", i),".txt",sep=""),quote=F)
+  toptable.annotated <- merge(toptable,annEPIC[,c("chr", "UCSC_RefGene_Name","Relation_to_Island","UCSC_RefGene_Group", "UCSC_RefGene_Accession",  "Probe_rs")],
+                              by="row.names")
+  toptable.annotated <-  subset(toptable.annotated, toptable.annotated$UCSC_RefGene_Name != "")
+  write.table(toptable.annotated, paste(paste("../Meth/AnalysisEPIC/OutputFiles/DMPs_weeks/LimmaBlockAnnot/", i),".txt",sep=""),quote=F)
+}
+
+
+```
+
+##2.5. Identify DMPs with Limma - Rebound (also in individual groups)
+For this part we need to remove B03 and B07
+
+```{r}
+
+dir.create("../Meth/AnalysisEPIC/OutputFiles")
+dir.create("../Meth/AnalysisEPIC/OutputFiles/DMPs_rb")
+dir.create("../Meth/AnalysisEPIC/OutputFiles/DMPs_rb/LimmaBlock")
+dir.create("../Meth/AnalysisEPIC/OutputFiles/DMPs_rb/LimmaBlockAnnot")
+dir.create("../Meth/AnalysisEPIC/OutputFiles/DMPs_rb/LimmaBlockAnnot/adjpval")
+
+rm(list = ls())
+
+Mval.QN1 <- read.table("../Meth/AnalysisEPIC/QNMval_sel.txt")
+Mval.QN1 <- Mval.QN1[,-grep("B03",colnames(Mval.QN1))]
+
+PhenoWBCEst <- read.table("../Meth/AnalysisEPIC/PhenoWBCest.txt")
+
+PhenoWBCEst <- PhenoWBCEst[-grep("A14", rownames(PhenoWBCEst)),]
+Pheno2 <- PhenoWBCEst [-grep("B03|A14",rownames(PhenoWBCEst)),]
+
+df <- data.frame(rownames(Pheno2), colnames(Mval.QN1))
+
+# Read annEPIC
+annEPIC <- read.table("../Meth/AnalysisEPIC/annotEPIC.txt")
+
+# Limma Model
+Week_Rebound <- factor(paste(Pheno2$Week, Pheno2$Rebound, sep ="_"), levels = c("preCART_Late", "MAP_Late","w24_Late", 
+                                                                              "preCART_Fast", "MAP_Fast", "w24_Fast"))
+
+mod1 <- model.matrix(~0 + Week_Rebound)
+colnames(mod1)=levels(Week_Rebound)
+
+contr.matrix_rb1 <- makeContrasts(
+  
+  preCART_FastvsLate = preCART_Fast-preCART_Late,
+  MAP_FastvsLate =  MAP_Fast-MAP_Late,
+  w24_FastvsLate =  w24_Fast-w24_Late,
+
+  
+  FastvsLate = ((preCART_Fast+MAP_Fast+w24_Fast)/3) - ((preCART_Late+MAP_Late+w24_Late)/3),
+
+  levels=colnames(mod1))
+
+
+
+fit=lmFit(Mval.QN1,mod1)
+
+
+## SIMPLE COMPARISON
+fit1=contrasts.fit(fit, contrasts=contr.matrix_rb1)
+fit1.2=eBayes(fit1)
+summary(decideTests(fit1.2))
+
+
+#All CpGs
+for (i in  colnames(fit1.2$coefficients)){
+  toptable <-  topTable(fit1.2, coef=i, sort="p", n=Inf, adjust = "BH")
+  write.table( toptable, paste(paste("../Meth/AnalysisEPIC/OutputFiles/DMPs_rb/LimmaBlock/", i),".txt",sep=""),quote=F)
+  toptable.annotated <- merge(toptable,annEPIC[,c("chr", "UCSC_RefGene_Name","Relation_to_Island","UCSC_RefGene_Group", "UCSC_RefGene_Accession",  "Probe_rs")],
+                              by="row.names")
+  toptable.annotated <-  subset(toptable.annotated, toptable.annotated$UCSC_RefGene_Name != "")
+  write.table(toptable.annotated, paste(paste("../Meth/AnalysisEPIC/OutputFiles/DMPs_rb/LimmaBlockAnnot/", i),".txt",sep=""),quote=F)
+}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+

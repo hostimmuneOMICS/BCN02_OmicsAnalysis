@@ -1,0 +1,499 @@
+---
+title: "LOLA-Acetylation marks"
+author: "Bruna Oriol"
+date: "9/2/2021"
+output: html_document
+---
+
+##LOLA Acetylation marks
+
+```{r}
+rm(list=ls()) 
+options(scipen=999)
+
+library("LOLA")
+library("GenomicRanges")
+library("ggplot2")
+
+regionDB1 = loadRegionDB("~admin/../../Volumes/Sintítulo/HistoneMarks_PBMCs/hg19/")
+
+
+```
+
+#w6-w0
+```{r}
+regionSet_w6w0 <- read.table("~/Bruna_PhD/Y4/telework/BCN02_v3/Meth/HOMERres_2/HOMER.Hyper_w6.txt")
+regionUniverse <- read.table("~/Bruna_PhD/Y4/telework/BCN02_v3/Meth/HOMERres_2/bg450_w6w0.txt")
+regionUniverse <- regionUniverse[, c(2,3,4,1)]
+colnames(regionUniverse) <- c("chrom", "chromStart", "chromEnd", "name")
+regionUniverse <- regionUniverse[-1,]
+regionUniverse$chromStart <- format(regionUniverse$chromStart , scientific=F)
+regionUniverse$chromEnd <- format(regionUniverse$chromEnd, scientific=F)
+
+regionUniverse[436529,]$chromEnd <- as.integer(regionUniverse[436529,]$chromStart)+1
+
+region.bed <- regionSet_w6w0[, c(2,3,4,1)]
+colnames(region.bed) <- c("chrom", "chromStart", "chromEnd", "name")
+region.bed <- region.bed[-1,]
+
+regionSet.gr <- GRanges(region.bed)
+regionUniverse.gr <- GRanges(regionUniverse)
+
+#userSetsRedefined =	redefineUserSets(regionSet.gr, regionUniverse.gr)
+
+locResults2 = runLOLA(regionSet.gr ,regionUniverse.gr, regionDB1, cores=2)
+locResults2$oddsRatio <- log2(locResults2$oddsRatio)
+
+g = plotTopLOLAEnrichments(locResults2)
+g
+
+
+xx = ggplot(locResults2, aes(x = "Histone Marks", y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = oddsRatio), alpha = 0.75, shape = 21) + 
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+  legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 12, face = "bold"), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+xx
+
+```
+
+```{r}
+regionSet_Hypow6_w6w0 <- read.table("~/Bruna_PhD/Y4/telework/BCN02_v3/Meth/HOMERres_2/HOMER.Hypo_w6.txt")
+regionUniverse <- read.table("~/Bruna_PhD/Y4/telework/BCN02_v3/Meth/HOMERres_2/bg450_w6w0.txt")
+regionUniverse <- regionUniverse[, c(2,3,4,1)]
+colnames(regionUniverse) <- c("chrom", "chromStart", "chromEnd", "name")
+regionUniverse <- regionUniverse[-1,]
+regionUniverse$chromStart <- format(regionUniverse$chromStart , scientific=F)
+regionUniverse$chromEnd <- format(regionUniverse$chromEnd, scientific=F)
+
+regionUniverse[436529,]$chromEnd <- as.integer(regionUniverse[436529,]$chromStart)+1
+
+region.bed <- regionSet_Hypow6_w6w0[, c(2,3,4,1)]
+colnames(region.bed) <- c("chrom", "chromStart", "chromEnd", "name")
+region.bed <- region.bed[-1,]
+
+regionSet_Hypow6.gr <- GRanges(region.bed)
+regionUniverse.gr <- GRanges(regionUniverse)
+
+#userSetsRedefined =	redefineUserSets(regionSet_Hypow6.gr, regionUniverse.gr)
+
+locResults_Hypow6 = runLOLA(regionSet_Hypow6.gr ,regionUniverse.gr, regionDB1, cores=2)
+locResults_Hypow6$oddsRatio <- log2(locResults_Hypow6$oddsRatio)
+
+g = plotTopLOLAEnrichments(locResults_Hypow6)
+g
+
+xx = ggplot(locResults_Hypow6, aes(x = "ChromHMM", y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = oddsRatio), alpha = 0.75, shape = 21) + 
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+  legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 12, face = "bold"), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+xx
+
+
+```
+
+
+
+```{r}
+locResults2$DMP <- rep("Hyper", 7)
+locResults_Hypow6$DMP <- rep("Hypo", 7)
+
+Res_DMPs <- rbind(locResults2, locResults_Hypow6)
+
+colnames(Res_DMPs)[5] <- "log2FC"
+
+# xx = ggplot(Res_DMPs , aes(x = DMP, y = collection)) + 
+#   geom_point(aes(size = pValueLog, fill = log2FC), alpha = 0.75, shape = 21) +  scale_size_continuous(range = c(3, 7))+
+#   theme(legend.key=element_blank(), 
+#   axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+#   axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+#   legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+#   legend.title = element_text(size = 12, face = "bold"), 
+#   panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+#   legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+# xx
+
+xx = ggplot(Res_DMPs , aes(x = DMP, y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = log2FC), alpha = 0.75, shape = 21) +  scale_size_continuous(range = c(3, 7))+
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 11), 
+  axis.text.y = element_text(colour = "black", size = 11), 
+  axis.title = element_blank(),
+  legend.text = element_text(size = 10,  colour ="black"), 
+  legend.title = element_text(size = 12), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+xx
+
+
+pdf("../PlotHistoneMarks.pdf")
+
+xx
+
+dev.off()
+
+
+
+png("../PlotHistoneMarks_Meth.png", width = 5, height = 4, res = 600, units = "in")
+
+xx
+
+dev.off()
+
+
+```
+
+
+#Hypo EvsL - w6
+```{r}
+regionSet_Hypow6_EvsL_EvsL <- read.table("~/Bruna_PhD/Y4/telework/BCN02_v3/Meth/HOMERres_2/HOMER.Hypo_w6_EvsL.txt")
+regionUniverse <- read.table("~/Bruna_PhD/Y4/telework/BCN02_v3/Meth/HOMERres_2/bg450_w6_EvsL.txt")
+regionUniverse <- regionUniverse[, c(2,3,4,1)]
+colnames(regionUniverse) <- c("chrom", "chromStart", "chromEnd", "name")
+regionUniverse <- regionUniverse[-1,]
+regionUniverse$chromStart <- format(regionUniverse$chromStart , scientific=F)
+regionUniverse$chromEnd <- format(regionUniverse$chromEnd, scientific=F)
+
+
+region.bed <- regionSet_Hypow6_EvsL_EvsL[, c(2,3,4,1)]
+colnames(region.bed) <- c("chrom", "chromStart", "chromEnd", "name")
+region.bed <- region.bed[-1,]
+
+regionSet_Hypow6_EvsL.gr <- GRanges(region.bed)
+regionUniverse.gr <- GRanges(regionUniverse)
+
+#userSetsRedefined =	redefineUserSets(regionSet_Hypow6_EvsL.gr, regionUniverse.gr)
+
+locResults_Hypow6_EvsL = runLOLA(regionSet_Hypow6_EvsL.gr ,regionUniverse.gr, regionDB1, cores=2)
+locResults_Hypow6_EvsL$oddsRatio <- log2(locResults_Hypow6_EvsL$oddsRatio)
+
+g = plotTopLOLAEnrichments(locResults_Hypow6_EvsL)
+g
+
+xx = ggplot(locResults_Hypow6_EvsL, aes(x = "Histone modifications", y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = oddsRatio), alpha = 0.75, shape = 21) + 
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+  legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 12, face = "bold"), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+xx
+
+```
+
+
+
+
+```{r}
+regionSet_Hyperw6_EvsL_EvsL <- read.table("~/Bruna_PhD/Y4/telework/BCN02_v3/Meth/HOMERres_2/HOMER.Hyper_w6_EvsL.txt")
+regionUniverse <- read.table("~/Bruna_PhD/Y4/telework/BCN02_v3/Meth/HOMERres_2/bg450_w6_EvsL.txt")
+regionUniverse <- regionUniverse[, c(2,3,4,1)]
+colnames(regionUniverse) <- c("chrom", "chromStart", "chromEnd", "name")
+regionUniverse <- regionUniverse[-1,]
+regionUniverse$chromStart <- format(regionUniverse$chromStart , scientific=F)
+regionUniverse$chromEnd <- format(regionUniverse$chromEnd, scientific=F)
+
+
+region.bed <- regionSet_Hyperw6_EvsL_EvsL[, c(2,3,4,1)]
+colnames(region.bed) <- c("chrom", "chromStart", "chromEnd", "name")
+region.bed <- region.bed[-1,]
+
+regionSet_Hyperw6_EvsL.gr <- GRanges(region.bed)
+regionUniverse.gr <- GRanges(regionUniverse)
+
+#userSetsRedefined =	redefineUserSets(regionSet_Hyperw6_EvsL.gr, regionUniverse.gr)
+
+locResults_Hyperw6_EvsL = runLOLA(regionSet_Hyperw6_EvsL.gr ,regionUniverse.gr, regionDB1, cores=2)
+locResults_Hyperw6_EvsL$oddsRatio <- log2(locResults_Hyperw6_EvsL$oddsRatio)
+
+g = plotTopLOLAEnrichments(locResults_Hyperw6_EvsL)
+g
+
+xx = ggplot(locResults_Hyperw6_EvsL, aes(x = "Histone modifications", y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = oddsRatio), alpha = 0.75, shape = 21) + 
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+  legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 12, face = "bold"), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+xx
+
+```
+
+
+
+
+```{r}
+locResults_Hyperw6_EvsL$DMP <- rep("Hyper", 7)
+locResults_Hypow6_EvsL$DMP <- rep("Hypo", 7)
+
+Res_DMPs <- rbind(locResults_Hyperw6_EvsL, locResults_Hypow6_EvsL)
+
+colnames(Res_DMPs)[5] <- "log2FC"
+
+xx = ggplot(Res_DMPs , aes(x = DMP, y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = log2FC), alpha = 0.75, shape = 21) +  scale_size_continuous(range = c(3, 7))+
+  theme(legend.key=element_blank(), 
+  axis.text.x =element_text(colour = "black", size = 10), 
+  axis.text.y = element_text(colour = "black", size = 11), 
+  axis.title = element_blank(),
+  legend.text = element_text(size = 10,  colour ="black"), 
+  legend.title = element_text(size = 12), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+xx
+pdf("../Histone modifications_EvsL.pdf")
+
+xx
+
+dev.off()
+
+
+png("../istone modifications_EvsL.png", width = 5, height = 4, res = 600, units = "in")
+
+xx
+
+dev.off()
+
+
+png("../histone modifications_EvsL_width3.png", width = 3, height = 4, res = 600, units = "in")
+xx
+dev.off()
+
+```
+
+
+#Hypo EvsL - w0
+```{r}
+regionSet_Hypow0_EvsL_EvsL <- read.table("~/Bruna_PhD/Y4/telework/BCN02_v3/Meth/HOMERres_2/HOMER.Hypo_w0_EvsL.txt")
+regionUniverse <- read.table("~/Bruna_PhD/Y4/telework/BCN02_v3/Meth/HOMERres_2/bg450_w0_EvsL.txt")
+regionUniverse <- regionUniverse[, c(2,3,4,1)]
+colnames(regionUniverse) <- c("chrom", "chromStart", "chromEnd", "name")
+regionUniverse <- regionUniverse[-1,]
+regionUniverse$chromStart <- format(regionUniverse$chromStart , scientific=F)
+regionUniverse$chromEnd <- format(regionUniverse$chromEnd, scientific=F)
+
+
+region.bed <- regionSet_Hypow0_EvsL_EvsL[, c(2,3,4,1)]
+colnames(region.bed) <- c("chrom", "chromStart", "chromEnd", "name")
+region.bed <- region.bed[-1,]
+
+regionSet_Hypow0_EvsL.gr <- GRanges(region.bed)
+regionUniverse.gr <- GRanges(regionUniverse)
+
+#userSetsRedefined =	redefineUserSets(regionSet_Hypow0_EvsL.gr, regionUniverse.gr)
+
+locResults_Hypow0_EvsL = runLOLA(regionSet_Hypow0_EvsL.gr ,regionUniverse.gr, regionDB1, cores=2)
+locResults_Hypow0_EvsL$oddsRatio <- log2(locResults_Hypow0_EvsL$oddsRatio)
+
+g = plotTopLOLAEnrichments(locResults_Hypow0_EvsL)
+g
+
+xx = ggplot(locResults_Hypow0_EvsL, aes(x = "Histone modifications", y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = oddsRatio), alpha = 0.75, shape = 21) + 
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+  legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 12, face = "bold"), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+xx
+
+```
+
+
+
+
+```{r}
+regionSet_Hyperw0_EvsL_EvsL <- read.table("~/Bruna_PhD/Y4/telework/BCN02_v3/Meth/HOMERres_2/HOMER.Hyper_w0_EvsL.txt")
+regionUniverse <- read.table("~/Bruna_PhD/Y4/telework/BCN02_v3/Meth/HOMERres_2/bg450_w0_EvsL.txt")
+regionUniverse <- regionUniverse[, c(2,3,4,1)]
+colnames(regionUniverse) <- c("chrom", "chromStart", "chromEnd", "name")
+regionUniverse <- regionUniverse[-1,]
+regionUniverse$chromStart <- format(regionUniverse$chromStart , scientific=F)
+regionUniverse$chromEnd <- format(regionUniverse$chromEnd, scientific=F)
+
+
+region.bed <- regionSet_Hyperw0_EvsL_EvsL[, c(2,3,4,1)]
+colnames(region.bed) <- c("chrom", "chromStart", "chromEnd", "name")
+region.bed <- region.bed[-1,]
+
+regionSet_Hyperw0_EvsL.gr <- GRanges(region.bed)
+regionUniverse.gr <- GRanges(regionUniverse)
+
+#userSetsRedefined =	redefineUserSets(regionSet_Hyperw0_EvsL.gr, regionUniverse.gr)
+
+locResults_Hyperw0_EvsL = runLOLA(regionSet_Hyperw0_EvsL.gr ,regionUniverse.gr, regionDB1, cores=2)
+locResults_Hyperw0_EvsL$oddsRatio <- log2(locResults_Hyperw0_EvsL$oddsRatio)
+
+g = plotTopLOLAEnrichments(locResults_Hyperw0_EvsL)
+g
+
+xx = ggplot(locResults_Hyperw0_EvsL, aes(x = "Histone modifications", y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = oddsRatio), alpha = 0.75, shape = 21) + 
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+  legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 12, face = "bold"), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+xx
+
+```
+
+
+
+
+```{r}
+locResults_Hyperw0_EvsL$DMP <- rep("Hyper", 7)
+locResults_Hypow0_EvsL$DMP <- rep("Hypo", 7)
+
+Res_DMPs <- rbind(locResults_Hyperw0_EvsL, locResults_Hypow0_EvsL)
+
+colnames(Res_DMPs)[5] <- "log2FC"
+
+xx = ggplot(Res_DMPs , aes(x = DMP, y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = log2FC), alpha = 0.75, shape = 21) +  scale_size_continuous(range = c(3, 7))+
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+  legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 12, face = "bold"), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+xx
+
+pdf("../Histone modifications_EvsL_w0.pdf")
+
+xx
+
+dev.off()
+
+```
+
+
+
+#Hypo EvsL - w1
+```{r}
+regionSet_Hypow1_EvsL_EvsL <- read.table("~/Bruna_PhD/Y4/telework/BCN02_v3/Meth/HOMERres_2/HOMER.Hypo_w1_EvsL.txt")
+regionUniverse <- read.table("~/Bruna_PhD/Y4/telework/BCN02_v3/Meth/HOMERres_2/bg450_w1_EvsL.txt")
+regionUniverse <- regionUniverse[, c(2,3,4,1)]
+colnames(regionUniverse) <- c("chrom", "chromStart", "chromEnd", "name")
+regionUniverse <- regionUniverse[-1,]
+regionUniverse$chromStart <- format(regionUniverse$chromStart , scientific=F)
+regionUniverse$chromEnd <- format(regionUniverse$chromEnd, scientific=F)
+
+
+region.bed <- regionSet_Hypow1_EvsL_EvsL[, c(2,3,4,1)]
+colnames(region.bed) <- c("chrom", "chromStart", "chromEnd", "name")
+region.bed <- region.bed[-1,]
+
+regionSet_Hypow1_EvsL.gr <- GRanges(region.bed)
+regionUniverse.gr <- GRanges(regionUniverse)
+
+#userSetsRedefined =	redefineUserSets(regionSet_Hypow1_EvsL.gr, regionUniverse.gr)
+
+locResults_Hypow1_EvsL = runLOLA(regionSet_Hypow1_EvsL.gr ,regionUniverse.gr, regionDB1, cores=2)
+locResults_Hypow1_EvsL$oddsRatio <- log2(locResults_Hypow1_EvsL$oddsRatio)
+
+g = plotTopLOLAEnrichments(locResults_Hypow1_EvsL)
+g
+
+xx = ggplot(locResults_Hypow1_EvsL, aes(x = "Histone modifications", y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = oddsRatio), alpha = 0.75, shape = 21) + 
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+  legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 12, face = "bold"), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+xx
+
+```
+
+
+
+
+```{r}
+regionSet_Hyperw1_EvsL_EvsL <- read.table("~/Bruna_PhD/Y4/telework/BCN02_v3/Meth/HOMERres_2/HOMER.Hyper_w1_EvsL.txt")
+regionUniverse <- read.table("~/Bruna_PhD/Y4/telework/BCN02_v3/Meth/HOMERres_2/bg450_w1_EvsL.txt")
+regionUniverse <- regionUniverse[, c(2,3,4,1)]
+colnames(regionUniverse) <- c("chrom", "chromStart", "chromEnd", "name")
+regionUniverse <- regionUniverse[-1,]
+regionUniverse$chromStart <- format(regionUniverse$chromStart , scientific=F)
+regionUniverse$chromEnd <- format(regionUniverse$chromEnd, scientific=F)
+
+
+region.bed <- regionSet_Hyperw1_EvsL_EvsL[, c(2,3,4,1)]
+colnames(region.bed) <- c("chrom", "chromStart", "chromEnd", "name")
+region.bed <- region.bed[-1,]
+
+regionSet_Hyperw1_EvsL.gr <- GRanges(region.bed)
+regionUniverse.gr <- GRanges(regionUniverse)
+
+#userSetsRedefined =	redefineUserSets(regionSet_Hyperw1_EvsL.gr, regionUniverse.gr)
+
+locResults_Hyperw1_EvsL = runLOLA(regionSet_Hyperw1_EvsL.gr ,regionUniverse.gr, regionDB1, cores=2)
+locResults_Hyperw1_EvsL$oddsRatio <- log2(locResults_Hyperw1_EvsL$oddsRatio)
+
+g = plotTopLOLAEnrichments(locResults_Hyperw1_EvsL)
+g
+
+xx = ggplot(locResults_Hyperw1_EvsL, aes(x = "Histone modifications", y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = oddsRatio), alpha = 0.75, shape = 21) + 
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+  legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 12, face = "bold"), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+xx
+
+```
+
+
+
+
+```{r}
+locResults_Hyperw1_EvsL$DMP <- rep("Hyper", 7)
+locResults_Hypow1_EvsL$DMP <- rep("Hypo", 7)
+
+Res_DMPs <- rbind(locResults_Hyperw1_EvsL, locResults_Hypow1_EvsL)
+
+colnames(Res_DMPs)[5] <- "log2FC"
+
+xx = ggplot(Res_DMPs , aes(x = DMP, y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = log2FC), alpha = 0.75, shape = 21) +  scale_size_continuous(range = c(3, 7))+
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+  legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 12, face = "bold"), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+xx
+
+pdf("../Histone modifications_EvsL_w1.pdf")
+
+xx
+
+dev.off()
+
+```

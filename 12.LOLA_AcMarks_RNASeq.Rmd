@@ -1,0 +1,286 @@
+---
+title: "LOLA-Acetylation marks"
+author: "Bruna Oriol"
+date: "9/2/2021"
+output: html_document
+---
+
+##LOLA Acetylation marks
+
+```{r}
+rm(list = ls())
+options(scipen=999)
+
+library("LOLA")
+library("GenomicRanges")
+library("ggplot2")
+
+regionDB1 = loadRegionDB("~admin/../../Volumes/Sintítulo/BCN02_LateAnalysis/HistoneMarks_PBMCs/hg19/")
+
+
+```
+
+#w6-w0
+```{r}
+regionSet_w6w0 <- read.table("../RNASeq/HOMERres_new/HOMER.Up_w6.txt", header = TRUE)
+regionUniverse <- read.table("../RNASeq/HOMERres_new/bgsw6w0homer.txt", header = TRUE)
+regionUniverse <- regionUniverse[, c(2,3,4,1)]
+colnames(regionUniverse) <- c("chrom", "chromStart", "chromEnd", "name")
+regionUniverse <- regionUniverse[-1,]
+regionUniverse$chromStart <- format(regionUniverse$chromStart , scientific=F)
+regionUniverse$chromEnd <- format(regionUniverse$chromEnd, scientific=F)
+
+
+region.bed <- regionSet_w6w0[, c(2,3,4,1)]
+colnames(region.bed) <- c("chrom", "chromStart", "chromEnd", "name")
+region.bed <- region.bed[-1,]
+
+regionSet.gr <- GRanges(region.bed)
+regionUniverse.gr <- GRanges(regionUniverse)
+
+#userSetsRedefined =	redefineUserSets(regionSet.gr, regionUniverse.gr)
+
+locResults2 = runLOLA(regionSet.gr ,regionUniverse.gr, regionDB1, cores=2)
+locResults2$oddsRatio <- log2(locResults2$oddsRatio)
+
+g = plotTopLOLAEnrichments(locResults2)
+g
+
+
+xx = ggplot(locResults2, aes(x = "Histone Marks", y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = oddsRatio), alpha = 0.75, shape = 21) + 
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+  legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 12, face = "bold"), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+xx
+
+```
+
+```{r}
+regionSet_Hypow6_w6w0 <- read.table("../RNASeq/HOMERres_new/HOMER.Down_w6.txt", header = TRUE)
+
+region.bed <- regionSet_Hypow6_w6w0[, c(2,3,4,1)]
+colnames(region.bed) <- c("chrom", "chromStart", "chromEnd", "name")
+region.bed <- region.bed[-1,]
+
+regionSet_Hypow6.gr <- GRanges(region.bed)
+regionUniverse.gr <- GRanges(regionUniverse)
+
+#userSetsRedefined =	redefineUserSets(regionSet_Hypow6.gr, regionUniverse.gr)
+
+locResults_Hypow6 = runLOLA(regionSet_Hypow6.gr ,regionUniverse.gr, regionDB1, cores=2)
+locResults_Hypow6$oddsRatio <- log2(locResults_Hypow6$oddsRatio)
+
+g = plotTopLOLAEnrichments(locResults_Hypow6)
+g
+
+xx = ggplot(locResults_Hypow6, aes(x = "ChromHMM", y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = oddsRatio), alpha = 0.75, shape = 21) + 
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+  legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 12, face = "bold"), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+xx
+
+
+```
+
+
+
+```{r}
+locResults2$DEG <- rep("Upregulated", 7)
+locResults_Hypow6$DEG <- rep("Downregulated", 7)
+
+Res_DEGs <- rbind(locResults2, locResults_Hypow6)
+
+colnames(Res_DEGs)[5] <- "log2FC"
+
+# xx = ggplot(Res_DEGs , aes(x = DEG, y = collection)) + 
+#   geom_point(aes(size = pValueLog, fill = log2FC), alpha = 0.75, shape = 21) +  scale_size_continuous(range = c(3, 7))+
+#   theme(legend.key=element_blank(), 
+#   axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+#   axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+#   legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+#   legend.title = element_text(size = 12, face = "bold"), 
+#   panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+#   legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+# xx
+
+xx = ggplot(Res_DEGs , aes(x = DEG, y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = log2FC), alpha = 0.75, shape = 21) +  scale_size_continuous(range = c(3, 7))+
+  theme(legend.key=element_blank(), 
+  axis.text.x =element_text(colour = "black", size = 11), 
+  axis.text.y = element_text(colour = "black", size = 11), 
+  axis.title = element_blank(),
+  legend.text = element_text(size = 10,  colour ="black"), 
+  legend.title = element_text(size = 12), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+xx
+
+
+
+yy = ggplot(Res_DEGs , aes(x = DEG, y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = log2FC), alpha = 0.75, shape = 21) +  scale_size_continuous(range = c(3, 7))+
+  theme(legend.key=element_blank(), 
+  axis.text.x =element_text(colour = "black", size = 11), 
+  axis.text.y = element_text(colour = "black", size = 11), 
+  axis.title = element_text(colour = "black", size = 11), 
+  legend.text = element_text(size = 10,  colour ="black"), 
+  legend.title = element_text(size = 12), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+yy
+
+```
+
+
+
+
+##LOLA Acetylation marks - Week 6 EvsL 
+
+```{r}
+rm(list = ls())
+
+options(scipen=999)
+
+library("LOLA")
+library("GenomicRanges")
+library("ggplot2")
+
+regionDB1 = loadRegionDB("~admin/../../Volumes/Sintítulo/HistoneMarks_PBMCs/hg19/")
+
+
+```
+
+#w6 E vsL
+```{r}
+regionSet_w6EvsL <- read.table("../RNASeq/HOMERres/HOMER.UpEvsL_w6.txt", header = TRUE)
+regionUniverse <- read.table("../RNASeq/HOMERres/bgsw6Rbhomer.txt", header = TRUE)
+regionUniverse <- regionUniverse[, c(2,3,4,1)]
+colnames(regionUniverse) <- c("chrom", "chromStart", "chromEnd", "name")
+regionUniverse <- regionUniverse[-1,]
+regionUniverse$chromStart <- format(regionUniverse$chromStart , scientific=F)
+regionUniverse$chromEnd <- format(regionUniverse$chromEnd, scientific=F)
+
+
+region.bed <- regionSet_w6EvsL[, c(2,3,4,1)]
+colnames(region.bed) <- c("chrom", "chromStart", "chromEnd", "name")
+region.bed <- region.bed[-1,]
+
+regionSet.gr <- GRanges(region.bed)
+regionUniverse.gr <- GRanges(regionUniverse)
+
+#userSetsRedefined =	redefineUserSets(regionSet.gr, regionUniverse.gr)
+
+locResults2 = runLOLA(regionSet.gr ,regionUniverse.gr, regionDB1, cores=2)
+locResults2$oddsRatio <- log2(locResults2$oddsRatio)
+
+g = plotTopLOLAEnrichments(locResults2)
+g
+
+
+xx = ggplot(locResults2, aes(x = "Histone Marks", y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = oddsRatio), alpha = 0.75, shape = 21) + 
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+  legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 12, face = "bold"), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+xx
+
+```
+
+
+
+```{r}
+regionSet_Downw6_w6EvsL <- read.table("../RNASeq/HOMERres/HOMER.DownEvsL_w6.txt", header = TRUE)
+
+region.bed <- regionSet_Downw6_w6EvsL[, c(2,3,4,1)]
+colnames(region.bed) <- c("chrom", "chromStart", "chromEnd", "name")
+region.bed <- region.bed[-1,]
+
+regionSet_Downw6.gr <- GRanges(region.bed)
+regionUniverse.gr <- GRanges(regionUniverse)
+
+#userSetsRedefined =	redefineUserSets(regionSet_Downw6.gr, regionUniverse.gr)
+
+locResults_Downw6 = runLOLA(regionSet_Downw6.gr ,regionUniverse.gr, regionDB1, cores=2)
+locResults_Downw6$oddsRatio <- log2(locResults_Downw6$oddsRatio)
+
+g = plotTopLOLAEnrichments(locResults_Downw6)
+g
+
+xx = ggplot(locResults_Downw6, aes(x = "ChromHMM", y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = oddsRatio), alpha = 0.75, shape = 21) + 
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+  legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 12, face = "bold"), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+xx
+
+
+```
+
+
+
+```{r}
+locResults2$DEG <- rep("Upregulated", 7)
+locResults_Downw6$DEG <- rep("Downregulated", 7)
+
+
+#q-value can't be computed for Downregulated genes, remove q-value column in Upregulated genes as well.
+locResults2 <- locResults2[, -c("qValue")]
+Res_DEGs <- rbind(locResults2, locResults_Downw6)
+
+colnames(Res_DEGs)[5] <- "log2FC"
+
+# xx = ggplot(Res_DEGs , aes(x = DEG, y = collection)) + 
+#   geom_point(aes(size = pValueLog, fill = log2FC), alpha = 0.75, shape = 21) +  scale_size_continuous(range = c(3, 7))+
+#   theme(legend.key=element_blank(), 
+#   axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+#   axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+#   legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+#   legend.title = element_text(size = 12, face = "bold"), 
+#   panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+#   legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+# xx
+
+xx = ggplot(Res_DEGs , aes(x = DEG, y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = log2FC), alpha = 0.75, shape = 21) +  scale_size_continuous(range = c(3, 7))+
+  theme(legend.key=element_blank(), 
+  axis.text.x =element_text(colour = "black", size = 11), 
+  axis.text.y = element_text(colour = "black", size = 11), 
+  axis.title = element_blank(),
+  legend.text = element_text(size = 10,  colour ="black"), 
+  legend.title = element_text(size = 12), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+xx
+
+
+yy = ggplot(Res_DEGs , aes(x = DEG, y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = log2FC), alpha = 0.75, shape = 21) +  scale_size_continuous(range = c(3, 7))+
+  theme(legend.key=element_blank(), 
+  axis.text.x =element_text(colour = "black", size = 11), 
+  axis.text.y = element_text(colour = "black", size = 11), 
+  axis.title = element_text(colour = "black", size = 11), 
+  legend.text = element_text(size = 10,  colour ="black"), 
+  legend.title = element_text(size = 12), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+yy
+
+```

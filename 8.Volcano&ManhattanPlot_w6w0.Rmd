@@ -1,0 +1,922 @@
+---
+title: "Figures_afterw6"
+author: "Bruna Oriol"
+date: "13/3/2021"
+output: html_document
+---
+#1. Volcano and Manhattan plot for DMPs w6-w0
+
+```{r}
+rm(list = ls())
+library(ggplot2)
+library(ggrepel)
+library(viridis)
+library(hrbrthemes)
+library(RColorBrewer)
+
+#Load data
+DMPs_w6w0 <- read.table("../Meth/Analysis450K/OutputFiles/DMPs_weeks/LimmaBlockAnnot/ w6vsw0.txt", stringsAsFactors = F)
+
+#Define gene
+DMPs_w6w0$Gene <-sapply(sapply(strsplit(DMPs_w6w0$UCSC_RefGene_Name, ";"), unique), function(x) ifelse(length(x)>1, paste(x[1], x[2], sep = "_"), x[1]))
+DMPs_w6w0$CpgGene <- paste(DMPs_w6w0$Row.names, DMPs_w6w0$Gene)
+
+#Define colours
+DMPs_w6w0$color <- ifelse(DMPs_w6w0$P.Value>0.05  , "grey", ifelse(DMPs_w6w0$logFC > 0, "red", "blue"))
+
+
+#Define significant DMPs,  hyper and hypomethylation
+library(tidyverse)
+DMPs_w6w0.sig <- DMPs_w6w0 %>% filter(P.Value < 0.05)
+DMPs_w6w0_up <- DMPs_w6w0.sig %>% filter(logFC>0)
+DMPs_w6w0_up <- DMPs_w6w0_up[order(DMPs_w6w0_up$P.Value),]
+select_up <- DMPs_w6w0_up[c(1,2,7),] #Select specific genes
+select_up$name <- gsub( " ", "\n", select_up$CpgGene)
+top5pval_up <- DMPs_w6w0_up[1:5,]
+top5pval_up$name <- gsub( " ", "\n", top5pval_up$CpgGene)
+
+DMPs_w6w0_down <- DMPs_w6w0.sig %>% filter(logFC<0)
+DMPs_w6w0_down <- DMPs_w6w0_down[order(DMPs_w6w0_down$P.Value),]
+
+top5pval_down <- DMPs_w6w0_down[1:5,]
+top5pval_down$name <- gsub( " ", "\n", top5pval_down$CpgGene)
+select_down <- DMPs_w6w0_down[c(1,2,5),] #Select specific genes
+select_down$name <- gsub( " ", "\n", select_down$CpgGene)
+
+
+
+DMPs_w6w0_upFC <- DMPs_w6w0_up[order(DMPs_w6w0_up$logFC, decreasing = T),]
+top5FC_up <- DMPs_w6w0_upFC[1:5,]
+top5FC_up$name <- gsub( " ", "\n", top5FC_up$CpgGene)
+
+selFCup <- DMPs_w6w0_upFC[c(1,10),]
+selFCup$name <- gsub( " ", "\n", selFCup$CpgGene)
+
+
+
+DMPs_w6w0_downFC <- DMPs_w6w0_down[order(DMPs_w6w0_down$logFC, decreasing = F),]
+top5FC_down <- DMPs_w6w0_downFC[1:5,]
+top5FC_down$name <- gsub( " ", "\n", top5FC_down$CpgGene)
+
+selFCdown <- DMPs_w6w0_downFC[c(4,10),]
+selFCdown$name <- gsub( " ", "\n", selFCdown$CpgGene)
+
+
+top10_up <- rbind(select_up, selFCup)
+top10_down <- rbind(select_down, selFCdown)
+
+
+
+#Volcano plot without label
+ggplot(DMPs_w6w0, aes(logFC, -log10(P.Value))) + geom_point(colour = DMPs_w6w0$color) + xlab("Log2FC") + scale_x_continuous(limits = c(-1.5, 2)) +  ylab("-log10(p-value)") + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"),legend.position = 'none',
+axis.text = element_text(size = 16, colour = "black"),
+axis.title = element_text(size=16))
+
+
+#Volcano plot -specific genes
+ggplot(DMPs_w6w0, aes(logFC, -log10(P.Value))) + geom_point(colour = DMPs_w6w0$color) + xlab("log2(Vacc+RMD/BSL)") + scale_x_continuous(limits = c(-1.2, 2)) +  ylab("-log10(p-value)") +
+  geom_label_repel(data = top10_up , aes(logFC, -log10(P.Value), label = name), size = 2.5, fill = "white", min.segment.length = 0) + 
+  geom_label_repel(data = top10_down ,  aes(logFC, -log10(P.Value), label = name), size = 2.5, min.segment.length = 0, fill = "white")+
+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"),legend.position = 'none',
+axis.text = element_text(size = 16, colour = "black"),
+axis.title = element_text(size=16))
+
+
+```
+
+
+#Chromosome Enrichments
+
+```{r}
+rm(list = ls())
+
+#Load data all evaluated CpG positions and DMPs (Meth and DMPs)
+Meth <- read.table("../Meth/Analysis450K/OutputFiles/DMPs_weeks/LimmaBlockAnnot/ w6vsw0.txt", stringsAsFactors = F)
+DMPs_w6w0 <- read.table("../Meth/Analysis450K/OutputFiles/DMPs_weeks/LimmaBlockAnnot/ w6vsw0.txt", stringsAsFactors = F)
+DMPs_w6w0 <- subset(DMPs_w6w0, DMPs_w6w0$P.Value<0.05)
+
+#Define genes
+DMPs_w6w0$Gene <-sapply(sapply(strsplit(DMPs_w6w0$UCSC_RefGene_Name, ";"), unique), function(x) ifelse(length(x)>1, paste(x[1], x[2], sep = "_"), x[1]))
+DMPs_w6w0$CpgGene <- paste(DMPs_w6w0$Row.names, DMPs_w6w0$Gene)
+
+chr_DMPs <- DMPs_w6w0[, c("Row.names","chr" )]
+chr_Meth <-  Meth[, c("Row.names","chr" )]
+chromosomes <- unique(as.character(Meth$chr))
+
+# We need to compare if the proportion of DMPs in a chr is higher than the positions represented in each chr. 
+pval <- NULL
+chr_vector <- NULL
+for (i in 1:length(chromosomes)){
+  chr_name <- chromosomes[i]
+  chr_vector <- c(chr_name, chr_vector) 
+  chr_table <- matrix(c(length(which(as.character(chr_DMPs$chr) == chr_name)),
+                        length(which(as.character(chr_DMPs$chr) != chr_name)), 
+                        length(which(as.character(chr_Meth$chr) == chr_name)),
+                        length(which(as.character(chr_Meth$chr) != chr_name))),
+                        nrow = 2,dimnames =list(c(chr_name, paste0("Non", chr_name)),c("DMPs", "No DMPs")))
+  p <- print(chr_table)
+
+   
+   chisqtest <- chisq.test(chr_table)
+
+   pval <- c(chisqtest$p.value, pval)
+
+}
+
+qval <- p.adjust(pval, method = "fdr")
+res <- data.frame(chr_vector, pval, qval)
+res <- res[order(res$pval, decreasing = F),] #Results
+
+
+#Number of DMPs/chr
+library(dplyr)
+df_chr <- DMPs_w6w0 %>%
+  group_by(chr) %>%
+  summarise(counts = n())
+
+df_chr$chr <- factor(df_chr$chr, levels =  c(paste0("chr", seq(1,22)), "chrX", "chrY"))
+df_chr$class <- rep("DMPs", nrow(df_chr))
+
+#Number of evaluated CpG positions /chr
+
+dfMeth_chr <- Meth %>%
+  group_by(chr) %>%
+  summarise(counts = n())
+dfMeth_chr$class <- rep("all", nrow(dfMeth_chr))
+
+dfMeth_chr$chr <- factor(dfMeth_chr$chr, levels =  c(paste0("chr", seq(1,22)), "chrX", "chrY"))
+
+
+df_1_chr <- rbind(df_chr, dfMeth_chr)
+
+#Proportion plot
+ggplot(df_1_chr, aes(fill=chr, y=counts, x = class)) + 
+    geom_bar(position="fill", stat="identity")+
+  theme(axis.text.x  = element_text(colour = "black", size = 11), 
+  axis.text.y = element_text(colour = "black", size = 11), 
+  legend.text = element_text(size = 10,  colour ="black"), 
+  legend.title = element_text(size = 12), 
+  panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1), 
+  legend.position = "right") 
+
+
+#Compute percentages
+df.prop_chr <- df_chr
+df.prop_chr$prop <- 100*(df_chr$counts/sum(df_chr$counts))
+dfMeth.prop_chr <- dfMeth_chr
+dfMeth.prop_chr$prop <- round(100*(dfMeth.prop_chr$counts/sum(dfMeth.prop_chr$counts)), 0)
+
+df_1.propchr <- rbind(df.prop_chr, dfMeth.prop_chr)
+
+col1.prop <- brewer.pal(8, "Greys")
+col1.prop <- col1.prop[c(3,5)]
+
+df_1.propchr$chr2 <- gsub("chr", "", df_1.propchr$chr)
+
+#Barplot
+ggplot(df_1.propchr, aes(fill=class, y=prop, x = chr)) + 
+    geom_bar(position="dodge", stat="identity") + 
+   theme(axis.text.x  = element_text(colour = "black", size = 10), 
+  axis.text.y = element_text(colour = "black", size = 10), 
+  legend.text = element_text(size = 10,  colour ="black"), 
+  legend.title = element_text(size = 12), 
+  panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1), 
+  legend.position = "right") +scale_fill_manual(values = col1.prop)
+```
+
+
+
+#2. Plot regions DMPs at w6 -w0. 
+
+```{r}
+rm(list = ls())
+library(viridis)
+library(hrbrthemes)
+library(RColorBrewer)
+# Compute the frequency
+
+#Load data
+DMPs_w6w0 <- read.table("../Meth/Analysis450K/OutputFiles/DMPs_weeks/LimmaBlockAnnot/ w6vsw0.txt", stringsAsFactors = F)
+DMPs_w6w0 <- subset(DMPs_w6w0, DMPs_w6w0$P.Value<0.05)
+
+dim(DMPs_w6w0)
+
+Meth <- read.table("../Meth/Analysis450K/OutputFiles/DMPs_weeks/LimmaBlockAnnot/ w6vsw0.txt", stringsAsFactors = F)
+
+#Numer of DMPs or evaluated CpG positions  in each type or relation to island
+library(dplyr)
+df <- DMPs_w6w0 %>%
+  group_by(Relation_to_Island) %>%
+  summarise(counts = n())
+
+df
+ggplot(df, aes(y=counts, x=Relation_to_Island)) + 
+    geom_bar(position="dodge", stat="identity")
+
+df$x <- rep("Relation to CpG Island", nrow(df))
+col1 <- brewer.pal(8, "Pastel2")
+col1 <- col1[seq(3,8)]
+df$Relation_to_Island  <- factor(df$Relation_to_Island, levels = c("Island", "N_Shore", "S_Shore", "N_Shelf", "S_Shelf", "OpenSea"))
+
+
+dfMeth <- Meth %>%
+  group_by(Relation_to_Island) %>%
+  summarise(counts = n())
+
+dfMeth$Relation_to_Island  <- factor(dfMeth$Relation_to_Island, levels = c("Island", "N_Shore", "S_Shore", "N_Shelf", "S_Shelf", "OpenSea"))
+dfMeth$x <- rep("Relation to CpG Island", nrow(dfMeth))
+
+
+df$class <- rep("DMP", nrow(df))
+dfMeth$class <- rep("all", nrow(dfMeth))
+dfMeth$x <- rep("Relation to CpG Island", nrow(dfMeth))
+
+
+df_1 <- rbind(df, dfMeth)
+
+#Proportion plot
+ggplot(df_1, aes(fill=Relation_to_Island, y=counts, x = class)) + 
+    geom_bar(position="fill", stat="identity")+
+  theme(axis.text.x  = element_text(colour = "black", size = 11), 
+  axis.text.y = element_text(colour = "black", size = 11), 
+  legend.text = element_text(size = 10,  colour ="black"), 
+  legend.title = element_text(size = 12), 
+  panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1), 
+  legend.position = "right") +scale_fill_manual(values = col1)
+
+#Proportion of each CpG positions in each relation to island.
+df.prop <- df
+df.prop$prop <- df$counts/sum(df$counts)
+dfMeth.prop <- dfMeth
+dfMeth.prop$prop <- dfMeth.prop$counts/sum(dfMeth.prop$counts)
+
+df_1.prop <- rbind(df.prop, dfMeth.prop)
+df_1.prop$Relation_to_Island
+
+col1.prop <- brewer.pal(8, "Greys")
+col1.prop <- col1.prop[c(3,5)]
+
+ggplot(df_1.prop, aes(fill=class, y=round(100*prop,0), x = Relation_to_Island)) + 
+    geom_bar(position="dodge", stat="identity") + 
+   theme(axis.text.x  = element_text(colour = "black", size = 10), 
+  axis.text.y = element_text(colour = "black", size = 10), 
+  legend.text = element_text(size = 10,  colour ="black"), 
+  legend.title = element_text(size = 12), 
+  panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1), 
+  legend.position = "right") +scale_fill_manual(values = col1.prop)
+
+
+#Relation to Island
+
+RelIsland_DMPs <- DMPs_w6w0[, c("Row.names","Relation_to_Island" )]
+count(RelIsland_DMPs)
+
+RelIsland_Meth <-  Meth[, c("Row.names","Relation_to_Island" )]
+
+Islands <- unique(as.character(Meth$Relation_to_Island))
+
+
+# We need to compare if the proportion of DMPs in a chr is higher than the positions represented in each chr. 
+pval <- NULL
+chr_vector <- NULL
+for (i in 1:length(Islands)){
+  chr_name <- Islands[i]
+  chr_vector <- c(chr_name, chr_vector) 
+  chr_table <- matrix(c(length(which(as.character(RelIsland_DMPs$Relation_to_Island) == chr_name)),
+                        length(which(as.character(RelIsland_DMPs$Relation_to_Island) != chr_name)), 
+                        length(which(as.character(RelIsland_Meth$Relation_to_Island) == chr_name)),
+                        length(which(as.character(RelIsland_Meth$Relation_to_Island) != chr_name))),
+                        nrow = 2,dimnames =list(c(chr_name, paste0("Non", chr_name)),c("DMPs", "No DMPs")))
+  p <- print(chr_table)
+   chisqtest <- chisq.test(chr_table)
+
+   pval <- c(chisqtest$p.value, pval)
+
+}
+
+qval <- p.adjust(pval, method = "fdr")
+res <- data.frame(chr_vector, pval, qval)
+res <- res[order(res$pval, decreasing = F),]
+
+```
+
+
+```{r}
+#Take the first Gene group annotation
+DMPs_w6w0$Gene_Group <- sapply(sapply(strsplit(DMPs_w6w0$UCSC_RefGene_Group, ";"), unique), function(x)x[1])
+Meth$Gene_Group <- sapply(sapply(strsplit(Meth$UCSC_RefGene_Group, ";"), unique), function(x)x[1])
+
+#Number of DMPs or CpG positions in each Gene group type
+df2 <- DMPs_w6w0 %>%
+  group_by(Gene_Group) %>%
+  summarise(counts = n())
+
+df2
+df2$x <- rep("Relation to nearest gene", nrow(df2))
+df$Gene_Group  <- factor(df2$Gene_Group, levels = c("TSS200", "TSS1500", "1stExon", "5'UTR", "3'UTR", "Body"))
+
+dfMeth2 <- Meth %>%
+  group_by(Gene_Group) %>%
+  summarise(counts = n())
+
+dfMeth2 $Gene_Group  <- factor(dfMeth2$Gene_Group, levels = c("TSS200", "TSS1500", "1stExon", "5'UTR", "3'UTR", "Body"))
+
+dfMeth2$x <- rep("Relation to nearest gene", nrow(dfMeth2))
+
+df2$class <- rep("DMP", nrow(df2))
+dfMeth2$class <- rep("all", nrow(dfMeth2))
+df2$perc <- 100*(df2$counts/sum(df2$counts))
+dfMeth2$perc <- 100*(dfMeth2$counts/sum(dfMeth2$counts))
+
+df_2 <- rbind(df2, dfMeth2)
+
+#Proportion plot
+ggplot(df_2, aes(fill=Gene_Group, y=counts, x = class)) + 
+    geom_bar(position="fill", stat="identity")+
+  theme(axis.text.x  = element_text(colour = "black", size = 11), 
+  axis.text.y = element_text(colour = "black", size = 11), 
+  legend.text = element_text(size = 10,  colour ="black"), 
+  legend.title = element_text(size = 12), 
+  panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1), 
+  legend.position = "right") +scale_fill_manual(values = col1) + 
+  scale_y_continuous(labels = scales:: percent_format(accuracy = 1))
+
+#Proportions of DMPs or CpG positions in relation to genes
+df2.prop <- df2
+df2.prop$prop <- df2$counts/sum(df2$counts)
+dfMeth2.prop <- dfMeth2
+dfMeth2.prop$prop <- dfMeth2.prop$counts/sum(dfMeth2.prop$counts)
+
+df_2.prop <- rbind(df2.prop, dfMeth2.prop)
+df_2.prop$Gene_Group
+
+col2.prop <- brewer.pal(8, "Greys")
+col2.prop <- col2.prop[c(3,5)]
+
+ggplot(df_2.prop, aes(fill=class, y=prop, x = Gene_Group)) + 
+    geom_bar(position="dodge", stat="identity") + 
+   theme(axis.text.x  = element_text(colour = "black", size = 10), 
+  axis.text.y = element_text(colour = "black", size = 10), 
+  legend.text = element_text(size = 10,  colour ="black"), 
+  legend.title = element_text(size = 12), 
+  panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1), 
+  legend.position = "right") +scale_fill_manual(values = col2.prop)
+
+
+#Relation to Gene
+
+RelGene_DMPs <- DMPs_w6w0[, c("Row.names","Gene_Group" )]
+RelGene_Meth <-  Meth[, c("Row.names","Gene_Group" )]
+
+Genes <- unique(as.character(Meth$Gene_Group))
+
+
+
+# We need to compare if the proportion of DMPs in a chr is higher than the positions represented in each chr. 
+pval <- NULL
+chr_vector <- NULL
+for (i in 1:length(Genes)){
+  chr_name <- Genes[i]
+  chr_vector <- c(chr_name, chr_vector) 
+  chr_table <- matrix(c(length(which(as.character(RelGene_DMPs$Gene_Group) == chr_name)),
+                        length(which(as.character(RelGene_DMPs$Gene_Group) != chr_name)), 
+                        length(which(as.character(RelGene_Meth$Gene_Group) == chr_name)),
+                        length(which(as.character(RelGene_Meth$Gene_Group) != chr_name))),
+                        nrow = 2,dimnames =list(c(chr_name, paste0("Non", chr_name)),c("DMPs", "No DMPs")))
+  p <- print(chr_table)
+   
+   chisqtest <- chisq.test(chr_table)
+
+   pval <- c(chisqtest$p.value, pval)
+
+}
+
+qval <- p.adjust(pval, method = "fdr")
+res <- data.frame(chr_vector, pval, qval)
+res <- res[order(res$pval, decreasing = F),]
+
+```
+
+
+
+#3. Volcano and Manhattan plot for DEGs w6-w0
+#Need to identify Genes in which chromosomes are they found. 
+```{r}
+rm(list = ls())
+library(RColorBrewer)
+library(ggplot2)
+library(ggrepel)
+
+#Load data
+counts<- read.table("../RNASeq/DEGweeks/LimmaBlock w6vsw0.txt", stringsAsFactors = F)
+DEGs_w6w0 <- read.table("../RNASeq/DEGweeks/LimmaBlock w6vsw0.txt", stringsAsFactors = F)
+
+#Define Genes and Biotype
+DEGs_w6w0$Gene <- sapply(strsplit(rownames(DEGs_w6w0), ","), function(x) x[2])
+DEGs_w6w0$Biotype <- sapply(strsplit(rownames(DEGs_w6w0), ","), function(x) x[3])
+
+
+#Define color 
+DEGs_w6w0$color <- ifelse(DEGs_w6w0$P.Value> 0.05, "grey", ifelse(DEGs_w6w0$logFC > 0, "red", "blue"))
+
+
+#Up and downregulated genes. Selection of specific genes. 
+library(tidyverse)
+DEGs_w6w0_Up <- subset(DEGs_w6w0, DEGs_w6w0$logFC > 0)
+DEGs_w6w0_Up <- DEGs_w6w0_Up [order(DEGs_w6w0_Up$P.Value, decreasing = FALSE),]
+pvalup <- DEGs_w6w0_Up[c(1,2,3),] #Specific genes
+DEGs_w6w0_Up_FC <- DEGs_w6w0_Up [order(DEGs_w6w0_Up$logFC, decreasing = TRUE),]
+FCup <- DEGs_w6w0_Up_FC[c(1,9),]#Specific genes
+
+select_up <- rbind(pvalup , FCup)
+
+DEGs_w6w0_Down <- subset(DEGs_w6w0, DEGs_w6w0$logFC < 0)
+DEGs_w6w0_Down<- DEGs_w6w0_Down [order(DEGs_w6w0_Down$P.Value, decreasing = FALSE),]
+pvaldown <- DEGs_w6w0_Down[c(1,4,7),]#Specific genes
+DEGs_w6w0_Down_FC <- DEGs_w6w0_Down [order(DEGs_w6w0_Down$logFC, decreasing = FALSE),]
+FCdown <- DEGs_w6w0_Down_FC[c(1,2),]#Specific genes
+
+select_down <- rbind(pvaldown , FCdown)
+
+#Volcano Plot with specific genes
+ggplot(DEGs_w6w0, aes(logFC, -log10(P.Value))) + geom_point(colour = DEGs_w6w0$color) + xlab("log2(Vacc+RMD/BSL)") + scale_x_continuous(limits = c(-3, 5)) +  ylab("-log10(p-value)") +
+  geom_label_repel(data = select_up, aes(logFC, -log10(P.Value), label = Gene), size = 3, min.segment.length = 0)+ 
+  geom_label_repel(data = select_down,  aes(logFC, -log10(P.Value), label = Gene), size = 3,min.segment.length = 0)+
+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"),legend.position = 'none',
+axis.text = element_text(size = 16, colour = "black"),
+axis.title = element_text(size=16))
+
+#Volcano Plot without labels
+ggplot(DEGs_w6w0, aes(logFC, -log10(P.Value))) + geom_point(colour = DEGs_w6w0$color) + xlab("Log2FC") + scale_x_continuous(limits = c(-3, 5)) +  ylab("-log10(p-value)")+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"),legend.position = 'none',
+axis.text = element_text(size = 16, colour = "black"),
+axis.title = element_text(size=16))
+```
+
+#Enrichment chromosomes
+```{r}
+
+#Proportions in chromosome
+rm(list = ls())
+counts <- read.table("../RNASeq/DEGweeks/LimmaBlock w6vsw0.txt", stringsAsFactors = F)
+
+DEGs_w6w0 <- read.table("../RNASeq/DEGweeks/LimmaBlock w6vsw0.txt", stringsAsFactors = F)
+DEGs_w6w0 <- subset(DEGs_w6w0, DEGs_w6w0$P.Value<0.05)
+DEGs_w6w0$Gene <- sapply(strsplit(rownames(DEGs_w6w0), ","), function(x) x[2])
+DEGs_w6w0$Biotype <- sapply(strsplit(rownames(DEGs_w6w0), ","), function(x) x[3])
+
+
+#Chromosome of each gene
+library(Homo.sapiens)
+locations = genes(Homo.sapiens, columns=c("SYMBOL", "ENSEMBL", "ENSEMBLTRANS"))
+locations = as.data.frame(locations)
+head(locations)
+
+locationsDEG <-  subset(locations, locations$SYMBOL %in% DEGs_w6w0$Gene)
+DEGs_w6w0$SYMBOL <- DEGs_w6w0$Gene
+DEGs_w6w0.m <- merge(DEGs_w6w0, locationsDEG, id = "SYMBOL")
+
+
+DEGs_w6w0.m$chr <- gsub(x = DEGs_w6w0.m$seqnames, pattern = "chr", replacement = "")
+DEGs_w6w0.m$chr <- factor(DEGs_w6w0.m$chr, levels = c(seq(1:22), "X", "Y"))
+DEGs_w6w0.m$chr2 <-  gsub(x = DEGs_w6w0.m$chr, pattern = "X", replacement = 23)
+DEGs_w6w0.m$chr2 <-  gsub(x = DEGs_w6w0.m$chr2, pattern = "Y", replacement = 24)
+DEGs_w6w0.m$chr2 <- factor(DEGs_w6w0.m$chr2, levels = c(seq(1:24)))
+
+
+
+counts$Gene <- sapply(strsplit(rownames(counts), ","), function(x) x[2])
+counts$Biotype <- sapply(strsplit(rownames(counts), ","), function(x) x[3])
+
+counts$SYMBOL <-counts$Gene
+dim(counts)
+
+locationscounts <-  subset(locations, locations$SYMBOL %in% counts$Gene)
+counts.m <- merge(counts, locationscounts, id = "SYMBOL")
+
+chr_counts <- counts.m[, c("SYMBOL","seqnames" )]
+chr_DEGs <- DEGs_w6w0.m[, c("SYMBOL","seqnames" )]
+
+chromosomes <- unique(as.character(chr_counts$seqnames))
+
+
+# We need to compare if the proportion of DEGs in a chr is higher than the positions represented in each chr. 
+pval <- NULL
+chr_vector <- NULL
+for (i in 1:length(chromosomes)){
+  chr_name <- chromosomes[i]
+  chr_vector <- c(chr_name, chr_vector) 
+  chr_table <- matrix(c(length(which(as.character(chr_DEGs$seqnames) == chr_name)),
+                        length(which(as.character(chr_DEGs$seqnames) != chr_name)), 
+                        length(which(as.character(chr_counts$seqnames) == chr_name)),
+                        length(which(as.character(chr_counts$seqnames) != chr_name))),
+                        nrow = 2,dimnames =list(c(chr_name, paste0("Non", chr_name)),c("DEGs", "No DEGs")))
+  p <- print(chr_table)
+   chisqtest <- chisq.test(chr_table)
+   pval <- c(chisqtest$p.value, pval)
+
+}
+
+qval <- p.adjust(pval, method = "fdr")
+res <- data.frame(chr_vector, pval, qval)
+res <- res[order(res$pval, decreasing = F),]
+
+
+#Number of DEGs or evaluated genes/chr
+library(dplyr)
+df_chr <- DEGs_w6w0.m %>%
+  group_by(seqnames) %>%
+  summarise(counts = n())
+
+df_chr$seqnames<- factor(df_chr$seqnames, levels =  c(paste0("chr", seq(1,22)), "chrX", "chrY"))
+df_chr$class <- rep("DEGs", nrow(df_chr))
+
+
+df_counts <- counts.m %>%
+  group_by(seqnames) %>%
+  summarise(counts = n())
+df_counts$class <- rep("all", nrow(df_counts))
+
+
+df_counts$seqnames <- factor(df_counts$seqnames, levels =  c(paste0("chr", seq(1,22)), "chrX", "chrY"))
+df_counts <- df_counts[-c(25,26),]
+
+
+df_1_chr <- rbind(df_chr, df_counts)
+
+#Proportion plot
+ggplot(df_1_chr, aes(fill=seqnames, y=counts, x = class)) + 
+    geom_bar(position="fill", stat="identity")+
+  theme(axis.text.x  = element_text(colour = "black", size = 11), 
+  axis.text.y = element_text(colour = "black", size = 11), 
+  legend.text = element_text(size = 10,  colour ="black"), 
+  legend.title = element_text(size = 12), 
+  panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1), 
+  legend.position = "right") 
+
+
+#Proportion of genes in each chr
+
+df.prop_chr <- df_chr
+df.prop_chr$prop <- 100*(df_chr$counts/sum(df_chr$counts))
+df_counts.prop <- df_counts
+df_counts.prop$prop <- 100 *(df_counts.prop$counts/sum(df_counts.prop$counts))
+
+
+df.prop_chr <- rbind(df.prop_chr, c("chrY", 30, "DEGs", 0))
+df_1.propchr <- rbind(df.prop_chr, df_counts.prop)
+
+df_1.propchr$prop <- round(as.numeric(df_1.propchr$prop ),0)
+
+col1.prop <- brewer.pal(8, "Greys")
+col1.prop <- col1.prop[c(3,5)]
+
+#Barplot percentage of number of genes/chr
+ggplot(df_1.propchr, aes(fill=class, y=prop, x = seqnames)) + 
+    geom_bar(position="dodge", stat="identity") + 
+   theme(axis.text.x  = element_text(colour = "black", size = 10), 
+  axis.text.y = element_text(colour = "black", size = 10), 
+  legend.text = element_text(size = 10,  colour ="black"), 
+  legend.title = element_text(size = 12), 
+  panel.background = element_blank(), axis.line = element_line(colour = "black", size = 1), 
+  legend.position = "right") +scale_fill_manual(values = col1.prop) + ylim(c(0,12))
+
+```
+
+
+
+
+#5. CIRCOS - BCN02 DNAm and gene expression
+
+```{r}
+rm(list = ls())
+library(circlize)
+load(system.file(package = "circlize", "extdata", "DMR.RData"))
+
+set.seed(999)
+bed = generateRandomBed()
+head(bed)
+
+#Load DMPs data
+DMPs_w6w0 <- read.table("../Meth/Analysis450K/OutputFiles/DMPs_weeks/LimmaBlockAnnot/ w6vsw0.txt", stringsAsFactors = F)
+#DMPs_w6w0 <- subset(DMPs_w6w0, DMPs_w6w0$P.Value<0.05)
+
+#Define genes
+DMPs_w6w0$Gene <-sapply(sapply(strsplit(DMPs_w6w0$UCSC_RefGene_Name, ";"), unique), function(x) ifelse(length(x)>1, paste(x[1], x[2], sep = "_"), x[1]))
+DMPs_w6w0$CpgGene <- paste(DMPs_w6w0$Row.names, DMPs_w6w0$Gene)
+
+#Select significant DMPs
+DMPs.sig <- subset(DMPs_w6w0, DMPs_w6w0$P.Value < 0.05 )
+
+#Annotate the different CpG sites
+ann450 <- read.table("../Meth/Analysis450K/annot450.txt")
+ann450sel <- ann450[DMPs.sig$Row.names,]
+bed.meth <- ann450sel[, c("chr", "pos")]
+bed.meth$end <- bed.meth$pos +1
+colnames(bed.meth) <- c("chr", "start", "end")
+
+#Select hyper and hypomethylated DMPs
+DMP_up <- DMPs.sig[DMPs.sig$logFC > 0,]
+DMP_down <- DMPs.sig[DMPs.sig$logFC < 0,]
+
+bed.meth.up <- bed.meth[DMP_up$Row.names,]
+bed.meth.down <- bed.meth[DMP_down$Row.names,]
+bed.meth.list <- list(bed.meth.up,bed.meth.down  )
+
+#Load DEGs and define Gene, Biotype, etc.
+DEGs_w6w0 <- read.table("../RNASeq/DEGweeks/LimmaBlock w6vsw0.txt", stringsAsFactors = F)
+DEGs_w6w0 <- subset(DEGs_w6w0, DEGs_w6w0$P.Value<0.05)
+DEGs_w6w0$Gene <- sapply(strsplit(rownames(DEGs_w6w0), ","), function(x) x[2])
+DEGs_w6w0$Ensembl <- sapply(strsplit(rownames(DEGs_w6w0), "[.]"), function(x) x[1])
+DEGs_w6w0$Biotype <- sapply(strsplit(rownames(DEGs_w6w0), ","), function(x) x[3])
+DEGs_w6w0$SYMBOL <- DEGs_w6w0$Gene
+
+#Define upregulated and  downregulated genes
+DEGs_w6w0_Up <- subset(DEGs_w6w0, DEGs_w6w0$logFC > 0)
+DEGs_w6w0_Down <- subset(DEGs_w6w0, DEGs_w6w0$logFC <0)
+
+
+#Degine where each gene is found
+library(Homo.sapiens)
+locations = genes(Homo.sapiens, columns=c("SYMBOL", "ENSEMBL", "ENSEMBLTRANS"))
+locations = as.data.frame(locations)
+head(locations)
+
+locationsDEG <-  subset(locations, locations$SYMBOL %in% DEGs_w6w0$Gene)
+DEGs_w6w0$SYMBOL <- DEGs_w6w0$Gene
+DEGs_w6w0.m <- merge(DEGs_w6w0, locationsDEG, id = "SYMBOL")
+
+DEGs_w6w0_Up.m <-  subset(DEGs_w6w0.m, DEGs_w6w0.m$SYMBOL %in% DEGs_w6w0_Up$SYMBOL  )
+DEGs_w6w0_Down.m <-  subset(DEGs_w6w0.m, DEGs_w6w0.m$SYMBOL %in% DEGs_w6w0_Down$SYMBOL )
+
+
+bed.count.up <-DEGs_w6w0_Up.m[, c("seqnames", "start", "end")]
+bed.count.down <-DEGs_w6w0_Down.m[, c("seqnames", "start", "end")]
+bed.count.list <- list(bed.count.up,bed.count.down  )
+
+
+#Methylation
+bed.meth.up$value <- -log10(DMP_up$P.Value)
+dim(bed.meth.up)
+bed.meth.down$value <- -log10(DMP_down$P.Value)
+dim(bed.meth.down)
+
+bed.meth.list <- list(bed.meth.up,bed.meth.down)
+
+bed.count.up$value <- -log10(DEGs_w6w0_Up.m$P.Value)
+bed.count.down$value <- -log10(DEGs_w6w0_Down.m$P.Value)
+bed.count.list <- list(bed.count.up,bed.count.down)
+
+circos.clear()
+
+library(MASS)
+library(RColorBrewer)
+library(circlize)
+
+col1 <- "orange"
+col2 <- rgb(1,0,0)
+# addalpha(col2, 0.8)
+# addalpha(col2,0.8)
+
+
+#Plot CIRCOS
+circos.initializeWithIdeogram()
+circos.genomicTrack(bed.meth.list, numeric.column = c(4,4),
+                    panel.fun = function(region, value, ...) {
+                      i = getI(...)
+                      circos.genomicPoints(region, value,col = "lightgreen", cex = 0.3, pch=16, ...)
+                    })
+circos.genomicTrack(bed.count.list, numeric.column = c(4,4),
+                    panel.fun = function(region, value, ...) {
+                      i = getI(...)
+                      circos.genomicPoints(region, value,  col = "goldenrod1", cex = 0.3, pch=16, ...)})
+
+```
+
+
+
+
+
+
+
+#REDUC
+
+```{r}
+rm(list = ls())
+library(ggplot2)
+library(ggrepel)
+
+#Load DEGs
+
+DEGs_PBMC.REDUC<- read.table("../REDUC/PBMC/tables/DEG_v9v1PBMC.txt", stringsAsFactors = FALSE)
+DEGs_PBMC.REDUC$Gene <- sapply(strsplit(rownames(DEGs_PBMC.REDUC), ","), function(x) x[2])
+DEGs_PBMC.REDUC$Biotype <- sapply(strsplit(rownames(DEGs_PBMC.REDUC), ","), function(x) x[3])
+
+#Define colors
+DEGs_PBMC.REDUC$color <- ifelse(DEGs_PBMC.REDUC$P.Value > 0.05, "grey", ifelse(DEGs_PBMC.REDUC$logFC > 0, "red", "blue"))
+
+#Define upregulated and downregulated genes
+DEGs_PBMC.REDUC_Up <- subset(DEGs_PBMC.REDUC, DEGs_PBMC.REDUC$logFC > 0)
+DEGs_PBMC.REDUC_Up <- DEGs_PBMC.REDUC_Up [order(DEGs_PBMC.REDUC_Up$P.Value, decreasing = FALSE),]
+pvalup <- DEGs_PBMC.REDUC_Up[c(4,5,13,14,15),] #specific genes
+DEGs_w6w0_Up_FC <-DEGs_PBMC.REDUC_Up [order(DEGs_PBMC.REDUC_Up$logFC, decreasing = TRUE),]
+FCup <- DEGs_w6w0_Up_FC[c(1,2,6),]#specific genes
+select_up <- pvalup
+
+DEGs_PBMC.REDUC_Down <- subset(DEGs_PBMC.REDUC, DEGs_PBMC.REDUC$logFC < 0)
+DEGs_PBMC.REDUC_Down <- DEGs_PBMC.REDUC_Down [order(DEGs_PBMC.REDUC_Down$P.Value, decreasing = FALSE),]
+
+pvaldown <- DEGs_PBMC.REDUC_Down [c(1,5,8),]#specific genes
+DEGs_w6w0_Down_FC <- DEGs_PBMC.REDUC_Down  [order(DEGs_PBMC.REDUC_Down $logFC, decreasing = FALSE),]
+FCdown <- DEGs_w6w0_Down_FC[c(1,7),]#specific genes
+
+select_down <- rbind(pvaldown , FCdown)
+
+#Volcano plot with specific genes labels
+ggplot(DEGs_PBMC.REDUC, aes(logFC, -log10(P.Value))) + geom_point(colour = DEGs_PBMC.REDUC$color) + xlab("log2(RMD/BSL)") + scale_x_continuous(limits = c(-3, 3)) +  ylab("-log10(p-value)") +
+  geom_label_repel(data = select_up, aes(logFC, -log10(P.Value), label = Gene), size = 3, min.segment.length = 0)+ 
+  geom_label_repel(data = select_down,  aes(logFC, -log10(P.Value), label = Gene), size = 3,min.segment.length = 0)+
+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"),legend.position = 'none',
+axis.text = element_text(size = 16, colour = "black"),
+axis.title = element_text(size=16))
+
+#Volcano plots without labels 
+ggplot(DEGs_PBMC.REDUC, aes(logFC, -log10(P.Value))) + geom_point(colour = DEGs_PBMC.REDUC$color) + xlab("Log2FC") + scale_x_continuous(limits = c(-3, 5)) +  ylab("-log10(p-value)")+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"),legend.position = 'none',
+axis.text = element_text(size = 16, colour = "black"),
+axis.title = element_text(size=16))
+
+```
+
+
+
+#REDUC
+
+```{r}
+rm(list = ls())
+library(ggplot2)
+library(ggrepel)
+
+#Load data
+DEGs_CD4.REDUC<- read.table("../REDUC/CD4/tables/DEG_v9v1CD4.txt", stringsAsFactors = FALSE)
+DEGs_CD4.REDUC$Gene <- sapply(strsplit(rownames(DEGs_CD4.REDUC), ","), function(x) x[2])
+DEGs_CD4.REDUC$Biotype <- sapply(strsplit(rownames(DEGs_CD4.REDUC), ","), function(x) x[3])
+
+#Define colors, upregulated and downregulated genes
+DEGs_CD4.REDUC$color <- ifelse(DEGs_CD4.REDUC$P.Value>0.05, "grey", ifelse(DEGs_CD4.REDUC$logFC > 0, "red", "blue"))
+DEGs_CD4.REDUC_Up <- subset(DEGs_CD4.REDUC, DEGs_CD4.REDUC$logFC > 0)
+DEGs_CD4.REDUC_Up <- DEGs_CD4.REDUC_Up [order(DEGs_CD4.REDUC_Up$P.Value, decreasing = FALSE),]
+pvalup <- DEGs_CD4.REDUC_Up[c(2,3,4),] #specific genes
+DEGs_REDUC_Up_FC <-DEGs_CD4.REDUC_Up [order(DEGs_CD4.REDUC_Up$logFC, decreasing = TRUE),]
+FCup <- DEGs_REDUC_Up_FC [c(1,2),]#specific genes
+select_up <- rbind(pvalup, FCup)
+
+DEGs_CD4.REDUC_Down <- subset(DEGs_CD4.REDUC, DEGs_CD4.REDUC$logFC < 0)
+DEGs_CD4.REDUC_Down <- DEGs_CD4.REDUC_Down [order(DEGs_CD4.REDUC_Down$P.Value, decreasing = FALSE),]
+
+pvaldown <- DEGs_CD4.REDUC_Down [c(1,3,4,5),]#specific genes
+DEGs_w6w0_Down_FC <- DEGs_CD4.REDUC_Down  [order(DEGs_CD4.REDUC_Down $logFC, decreasing = FALSE),]
+FCdown <- DEGs_w6w0_Down_FC[c(7),]#specific genes
+
+select_down <- rbind(pvaldown , FCdown)
+
+#Volcano Plot specific genes
+ggplot(DEGs_CD4.REDUC, aes(logFC, -log10(P.Value))) + geom_point(colour = DEGs_CD4.REDUC$color) + xlab("log2(RMD/BSL)") + scale_x_continuous(limits = c(-3, 4)) +  ylab("-log10(p-value)") +
+  geom_label_repel(data = select_up, aes(logFC, -log10(P.Value), label = Gene), size = 3, min.segment.length = 0)+ 
+  geom_label_repel(data = select_down,  aes(logFC, -log10(P.Value), label = Gene), size = 3,min.segment.length = 0)+
+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"),legend.position = 'none',
+axis.text = element_text(size = 16, colour = "black"),
+axis.title = element_text(size=16))
+dev.off()
+
+
+#Volcano plot without labels
+ggplot(DEGs_CD4.REDUC, aes(logFC, -log10(P.Value))) + geom_point(colour = DEGs_CD4.REDUC$color) + xlab("Log2FC") + scale_x_continuous(limits = c(-3, 5)) +  ylab("-log10(p-value)")+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"),legend.position = 'none',
+axis.text = element_text(size = 16, colour = "black"),
+axis.title = element_text(size=16))
+
+
+```
+
+
+
+
+
+
+
+#5. CIRCOS - REDUC
+```{r}
+rm(list = ls())
+library(circlize)
+load(system.file(package = "circlize", "extdata", "DMR.RData"))
+
+set.seed(999)
+bed = generateRandomBed()
+head(bed)
+
+#Load data from PBMCs
+DEGs_PBMC.REDUC<- read.table("../REDUC/PBMC/tables/DEG_v9v1PBMC.txt", stringsAsFactors = FALSE)
+DEGs_PBMC.REDUC$Gene <- sapply(strsplit(rownames(DEGs_PBMC.REDUC), ","), function(x) x[2])
+DEGs_PBMC.REDUC$Biotype <- sapply(strsplit(rownames(DEGs_PBMC.REDUC), ","), function(x) x[3])
+DEGs_PBMC.REDUC<- subset(DEGs_PBMC.REDUC, DEGs_PBMC.REDUC$P.Value<0.05)
+
+
+#Annotate genes in chromosomes
+library(Homo.sapiens)
+locations = genes(Homo.sapiens, columns=c("SYMBOL", "ENSEMBL", "ENSEMBLTRANS"))
+locations = as.data.frame(locations)
+head(locations)
+
+locationsDEG <-  subset(locations, locations$SYMBOL %in% DEGs_PBMC.REDUC$Gene)
+
+#Degine genes, upregulated and downregulated genes
+DEGs_PBMC.REDUC$SYMBOL <- DEGs_PBMC.REDUC$Gene
+DEGs_PBMC.REDUC.m <- merge(DEGs_PBMC.REDUC, locationsDEG, id = "SYMBOL")
+
+DEGs_PBMC_Up.sig <- subset(DEGs_PBMC.REDUC, DEGs_PBMC.REDUC$logFC>0)
+DEGs_PBMC_Down.sig  <- subset(DEGs_PBMC.REDUC, DEGs_PBMC.REDUC$logFC<0)
+
+
+DEGs_PBMC_Up.sig.m <-  subset(DEGs_PBMC.REDUC.m, DEGs_PBMC.REDUC.m$SYMBOL %in%DEGs_PBMC_Up.sig$Gene)
+DEGs_PBMC_Down.sig.m <-  subset(DEGs_PBMC.REDUC.m, DEGs_PBMC.REDUC.m$SYMBOL %in%DEGs_PBMC_Down.sig$Gene)
+
+bed.countPBMC.up <-DEGs_PBMC_Up.sig.m[, c("seqnames", "start", "end")]
+bed.countPBMC.down <-DEGs_PBMC_Down.sig.m[, c("seqnames", "start", "end")]
+bed.countPBMC.list <- list(bed.countPBMC.up,bed.countPBMC.down  )
+
+
+#Load data from PBMCs
+
+DEGs_CD4.REDUC<- read.table("../REDUC/CD4/tables/DEG_v9v1CD4.txt", stringsAsFactors = FALSE)
+DEGs_CD4.REDUC$Gene <- sapply(strsplit(rownames(DEGs_CD4.REDUC), ","), function(x) x[2])
+DEGs_CD4.REDUC$Biotype <- sapply(strsplit(rownames(DEGs_CD4.REDUC), ","), function(x) x[3])
+DEGs_CD4.REDUC<- subset(DEGs_CD4.REDUC, DEGs_CD4.REDUC$P.Value<0.05)
+
+#Annotate genes DEGs in CD4 
+library(Homo.sapiens)
+locations = genes(Homo.sapiens, columns=c("SYMBOL", "ENSEMBL", "ENSEMBLTRANS"))
+locations = as.data.frame(locations)
+head(locations)
+
+locationsDEG <-  subset(locations, locations$SYMBOL %in% DEGs_CD4.REDUC$Gene)
+DEGs_CD4.REDUC$SYMBOL <- DEGs_CD4.REDUC$Gene
+DEGs_CD4.REDUC.m <- merge(DEGs_CD4.REDUC, locationsDEG, id = "SYMBOL")
+
+DEGs_CD4_Up.sig <- subset(DEGs_CD4.REDUC, DEGs_CD4.REDUC$logFC>0)
+DEGs_CD4_Down.sig  <- subset(DEGs_CD4.REDUC, DEGs_CD4.REDUC$logFC<0)
+
+
+DEGs_CD4_Up.sig.m <-  subset(DEGs_CD4.REDUC.m, DEGs_CD4.REDUC.m$SYMBOL %in%DEGs_CD4_Up.sig$Gene)
+DEGs_CD4_Down.sig.m <-  subset(DEGs_CD4.REDUC.m, DEGs_CD4.REDUC.m$SYMBOL %in%DEGs_CD4_Down.sig$Gene)
+
+bed.countCD4.up <-DEGs_CD4_Up.sig.m[, c("seqnames", "start", "end")]
+bed.countCD4.down <-DEGs_CD4_Down.sig.m[, c("seqnames", "start", "end")]
+bed.countCD4.list <- list(bed.countCD4.up,bed.countCD4.down  )
+
+
+
+#PBMCs
+bed.countPBMC.up$value <- -log10(DEGs_PBMC_Up.sig.m$P.Value)
+dim(bed.countPBMC.up)
+bed.countPBMC.down$value <- -log10(DEGs_PBMC_Down.sig.m$P.Value)
+dim(bed.countPBMC.down)
+
+bed.countPBMC.list <- list(bed.countPBMC.up,bed.countPBMC.down)
+
+bed.countCD4.up$value <- -log10(DEGs_CD4_Up.sig.m$P.Value)
+dim(bed.countCD4.up)
+bed.countCD4.down$value <- -log10(DEGs_CD4_Down.sig.m$P.Value)
+dim(bed.countCD4.down)
+
+bed.countCD4.list <- list(bed.countCD4.up,bed.countCD4.down)
+
+circos.clear()
+
+library(MASS)
+library(RColorBrewer)
+
+#CIRCOS PLOT
+circos.initializeWithIdeogram()
+circos.genomicTrack(bed.countPBMC.list, numeric.column = c(4,4),
+                    panel.fun = function(region, value, ...) {
+                      i = getI(...)
+                      circos.genomicPoints(region, value,col = "darkorchid4", cex = 0.3, pch=16, ...)
+                    })
+circos.genomicTrack(bed.countCD4.list, numeric.column = c(4,4),
+                    panel.fun = function(region, value, ...) {
+                      i = getI(...)
+                      circos.genomicPoints(region, value,  col = "chocolate4", cex = 0.3, pch=16, ...)})
+
+
+
+
+```
+
+
+

@@ -1,0 +1,575 @@
+---
+title: "MFuzz_RNASeq_w0w1w6"
+author: "Bruna Oriol"
+date: "30/8/2020"
+output: html_document
+---
+
+# MFuzz profiles DMP RNA Seq - w0, w1, w6 
+
+MFuzz R package applies soft clustering to identify groups of genes with similar expression profiles along the time.
+
+```{r}
+rm(list=ls())
+# Load libraries
+library(Mfuzz)
+```
+ 
+## 1. Read normalized gene expression
+
+```{r}
+DNAm <- read.table(file = "../Meth/Analysis450K/OutputFiles/QNBetaval_sel.txt" )
+DNAm <- DNAm[, grep("w0|w1$|w6", colnames(DNAm))]
+```
+
+
+## 2. Read DMP: w1 vs w0 / w6 vs w0 / w6 vs w1
+
+```{r}
+DMP_w6w0 <- read.table("../Meth/Analysis450K/OutputFiles/DMPs_weeks/LimmaBlockAnnot/ w6vsw0.txt")
+DMP_w6w0 <- subset(DMP_w6w0, DMP_w6w0$P.Value < 0.05 ) 
+
+
+DMP_w1w0 <- read.table("../Meth/Analysis450K/OutputFiles/DMPs_weeks/LimmaBlockAnnot/ w1vsw0.txt")
+DMP_w1w0 <- subset(DMP_w1w0, DMP_w1w0$P.Value < 0.05 )
+
+
+DMP_w6w1 <- read.table("../Meth/Analysis450K/OutputFiles/DMPs_weeks/LimmaBlockAnnot/ w6vsw1.txt")
+DMP_w6w1 <- subset(DMP_w6w1, DMP_w6w1$P.Value < 0.05 )
+
+```
+
+## 3. Take all the genes that are differentially expressed at some point
+
+```{r}
+DMPjoint <-  Reduce(unique,list(DMP_w6w0$Row.names, DMP_w1w0$Row.names,DMP_w6w1$Row.names))
+DMPjoint_methyl  <- DNAm[DMPjoint,]
+
+write.table(DMPjoint_methyl , file = "../Meth/Analysis450K/MFuzz/Methjoint_w6w1w0.txt")
+```
+
+#4. Ann450K_Rename
+```{r}
+library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+ann450k<-getAnnotation(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+ann450k<-as.data.frame(ann450k)
+head(ann450k)
+#Take only annotated genes. 
+ann450.gene <- subset(ann450k, ann450k$UCSC_RefGene_Name != "")
+ann450.gene$Gene <- sapply(sapply(strsplit(ann450.gene$UCSC_RefGene_Name, ";"), unique), function(x) ifelse(length(x)>1, paste(x[1], x[2], sep = "_"), x))
+DMPjoint_methyl  <- subset(DMPjoint_methyl , rownames(DMPjoint_methyl) %in% rownames(ann450.gene))
+ann450.DNAMethyl <- ann450.gene[rownames(DMPjoint_methyl ),]
+rownames(DMPjoint_methyl) <- paste(ann450.DNAMethyl$Name, ann450.DNAMethyl$Gene, sep = ".")
+
+#Do the same with rownames.Betas
+
+ann450.BETAS <- subset(ann450.gene, ann450.gene$Name %in% rownames(DNAm))
+```
+
+
+## 4. Now we need to take the mean of each of the genes in each timepoint.
+
+```{r}
+w0.counts <- DMPjoint_methyl[, grep("w0", colnames(DMPjoint_methyl))]
+w0 <- apply(w0.counts, 1, median, drop = TRUE)
+w1.counts <- DMPjoint_methyl[, grep("w1", colnames(DMPjoint_methyl))]
+w1 <- apply(w1.counts, 1, median, drop = TRUE)
+w6.counts <- DMPjoint_methyl[, grep("w6", colnames(DMPjoint_methyl))]
+w6 <- apply(w6.counts, 1, median, drop = TRUE)
+```
+ 
+
+## 5. Construct a new matrix with weeks in columns (w0, w1 and w6) and genes in rows
+1. Construct a matrix with the means calculated before: Genes in rows and weeks in columns.
+2. Convert the matrix into an ExpressionSet
+3. Standdardise the matrix: standardized value = (original value of mean) / standard deviation. It's important because
+here we are not interested in genes with the same expression level but with the same expression profile.
+
+```{r}
+counts.matrix <- matrix(c(w0,w1,w6), ncol = 3, nrow = length(w0))
+colnames(counts.matrix) <- c("w0", "w1", "w6")
+#rownames(counts.matrix) <- sapply(strsplit(rownames(w0.counts), ","), function(x)x[1])
+rownames(counts.matrix) <- rownames(w0.counts)
+
+Eset.counts <-new("ExpressionSet", exprs=as.matrix(counts.matrix))
+
+counts.matrix.s <- standardise(Eset.counts)
+counts.matrix.s <- counts.matrix.s[complete.cases(counts.matrix.s@assayData$exprs),]
+hist(counts.matrix.s@assayData$exprs)
+
+rownames(counts.matrix.s)
+```
+
+
+##5. We need to estimate the fuzzier parameter. 
+To do that, we apply the function mestimate().[Article Method] (https://academic.oup.com/bioinformatics/article/26/22/2841/227572)
+
+```{r, mestimate}
+m.est <- mestimate(counts.matrix.s)
+m.est
+```
+
+# 6. Number of Clusters Determination
+ We use the function Dmin() that calculates the minimum centroid distance between clusters for different clister numbes. 
+```{r, Dmin}
+Dmin(counts.matrix.s, m=m.est, crange=seq(3,20,1))
+```
+#7. MFuzz Plot
+
+We will see the different ptofiles along the time.
+We will select a minimal membership of 0.4 threshold to select the genes in each of the clusters. 
+
+```{r, Make the plots for the clusters}
+
+set.seed(42)
+
+cl7 <- mfuzz(counts.matrix.s, c = 7, m = m.est)
+
+pdf("../Meth/Analysis450K/MFuzz/GeneProfiles_Allgenes_cl7.pdf")
+library(ggplot2)
+mfuzz.plot(counts.matrix.s, cl = cl7, time.labels = c("Bsl", "Vacc", "Vacc+RMD"), mfrow = c(1,1), new.window = F, min.mem = 0.2 ) 
+dev.off()
+
+pdf("../Meth/Analysis450K/MFuzz/GeneProfiles_Allgenes_cl7_cl1.pdf", width = 4, height = 4)
+par(oma=c(0,0,0,1.2)) 
+mfuzz.plot2(counts.matrix.s, cl = cl7, time.labels = c("Bsl", "Vacc", "Vacc+RMD"), mfrow = c(1,1), new.window = F, min.mem = 0.2, cex.axis = 1.4, x11=F, single =1, xaxt = "n", col.lab="transparent", col.main = "transparent")
+axis(side = 1,labels = FALSE)
+title(main = "Cluster 1\n (n = 1766)", col.main ="black")
+text(x = 1:3,
+     ## Move labels to just below bottom of chart.
+     y = par("usr")[3] - 0.45,
+     ## Use names from the data list.
+     labels = c("Bsl", "Vacc", "Vacc+RMD"),
+     ## Change the clipping region.
+     xpd = NA,
+     ## Rotate the labels by 35 degrees.
+     srt = 35,
+     ## Adjust the labels to almost 100% right-justified.
+     adj=0.4,
+     ## Increase label size.
+     cex = 1.4)
+
+dev.off()
+
+pdf("../Meth/Analysis450K/MFuzz/GeneProfiles_Allgenes_cl7_cl2.pdf", width = 4, height = 4)
+par(oma=c(0,0,0,1.2)) 
+mfuzz.plot2(counts.matrix.s, cl = cl7, time.labels = c("Bsl", "Vacc", "Vacc+RMD"), mfrow = c(1,1), new.window = F, min.mem = 0.2, cex.axis = 1.4, x11=F, single =2, xaxt = "n", col.lab="transparent", col.main = "transparent")
+axis(side = 1,labels = FALSE)
+title(main = "Cluster 3\n (n = 1988)", col.main ="black")
+text(x = 1:3,
+     ## Move labels to just below bottom of chart.
+     y = par("usr")[3] - 0.45,
+     ## Use names from the data list.
+     labels = c("Bsl", "Vacc", "Vacc+RMD"),
+     ## Change the clipping region.
+     xpd = NA,
+     ## Rotate the labels by 35 degrees.
+     srt = 35,
+     ## Adjust the labels to almost 100% right-justified.
+     adj=0.4,
+     ## Increase label size.
+     cex = 1.4)
+
+dev.off()
+
+pdf("../Meth/Analysis450K/MFuzz/GeneProfiles_Allgenes_cl7_cl3.pdf", width = 4, height = 4)
+par(oma=c(0,0,0,1.2)) 
+mfuzz.plot2(counts.matrix.s, cl = cl7, time.labels = c("Bsl", "Vacc", "Vacc+RMD"), mfrow = c(1,1), new.window = F, min.mem = 0.2, cex.axis = 1.4, x11=F, single =3, xaxt = "n", col.lab="transparent", col.main = "transparent")
+axis(side = 1,labels = FALSE)
+title(main = "Cluster 7\n (n = 1537)", col.main ="black")
+text(x = 1:3,
+     ## Move labels to just below bottom of chart.
+     y = par("usr")[3] - 0.45,
+     ## Use names from the data list.
+     labels = c("Bsl", "Vacc", "Vacc+RMD"),
+     ## Change the clipping region.
+     xpd = NA,
+     ## Rotate the labels by 35 degrees.
+     srt = 35,
+     ## Adjust the labels to almost 100% right-justified.
+     adj=0.4,
+     ## Increase label size.
+     cex = 1.4)
+
+dev.off()
+
+pdf("../Meth/Analysis450K/MFuzz/GeneProfiles_Allgenes_cl7_cl4.pdf", width = 4, height = 4)
+par(oma=c(0,0,0,1.2)) 
+mfuzz.plot2(counts.matrix.s, cl = cl7, time.labels = c("Bsl", "Vacc", "Vacc+RMD"), mfrow = c(1,1), new.window = F, min.mem = 0.2, cex.axis = 1.4, x11=F, single =4, xaxt = "n", col.lab="transparent", col.main = "transparent")
+axis(side = 1,labels = FALSE)
+title(main = "Cluster 4\n (n = 1627)", col.main ="black")
+text(x = 1:3,
+     ## Move labels to just below bottom of chart.
+     y = par("usr")[3] - 0.45,
+     ## Use names from the data list.
+     labels = c("Bsl", "Vacc", "Vacc+RMD"),
+     ## Change the clipping region.
+     xpd = NA,
+     ## Rotate the labels by 35 degrees.
+     srt = 35,
+     ## Adjust the labels to almost 100% right-justified.
+     adj=0.4,
+     ## Increase label size.
+     cex = 1.4)
+
+dev.off()
+
+
+pdf("../Meth/Analysis450K/MFuzz/GeneProfiles_Allgenes_cl7_cl5.pdf", width = 4, height = 4)
+par(oma=c(0,0,0,1.2)) 
+mfuzz.plot2(counts.matrix.s, cl = cl7, time.labels = c("Bsl", "Vacc", "Vacc+RMD"), mfrow = c(1,1), new.window = F, min.mem = 0.2, cex.axis = 1.4, x11=F, single =5, xaxt = "n", col.lab="transparent", col.main = "transparent")
+axis(side = 1,labels = FALSE)
+title(main = "Cluster 6\n (n = 1985)", col.main ="black")
+text(x = 1:3,
+     ## Move labels to just below bottom of chart.
+     y = par("usr")[3] - 0.45,
+     ## Use names from the data list.
+     labels = c("Bsl", "Vacc", "Vacc+RMD"),
+     ## Change the clipping region.
+     xpd = NA,
+     ## Rotate the labels by 35 degrees.
+     srt = 35,
+     ## Adjust the labels to almost 100% right-justified.
+     adj=0.4,
+     ## Increase label size.
+     cex = 1.4)
+
+dev.off()
+
+
+pdf("../Meth/Analysis450K/MFuzz/GeneProfiles_Allgenes_cl7_cl6.pdf", width = 4, height = 4)
+par(oma=c(0,0,0,1.2)) 
+mfuzz.plot2(counts.matrix.s, cl = cl7, time.labels = c("Bsl", "Vacc", "Vacc+RMD"), mfrow = c(1,1), new.window = F, min.mem = 0.2, cex.axis = 1.4, x11=F, single =6, xaxt = "n", col.lab="transparent", col.main = "transparent")
+axis(side = 1,labels = FALSE)
+title(main = "Cluster 5\n (n = 1821)", col.main ="black")
+text(x = 1:3,
+     ## Move labels to just below bottom of chart.
+     y = par("usr")[3] - 0.45,
+     ## Use names from the data list.
+     labels = c("Bsl", "Vacc", "Vacc+RMD"),
+     ## Change the clipping region.
+     xpd = NA,
+     ## Rotate the labels by 35 degrees.
+     srt = 35,
+     ## Adjust the labels to almost 100% right-justified.
+     adj=0.4,
+     ## Increase label size.
+     cex = 1.4)
+
+dev.off()
+
+
+
+pdf("../Meth/Analysis450K/MFuzz/GeneProfiles_Allgenes_cl7_cl7.pdf", width = 4, height = 4)
+par(oma=c(0,0,0,1.2)) 
+mfuzz.plot2(counts.matrix.s, cl = cl7, time.labels = c("Bsl", "Vacc", "Vacc+RMD"), mfrow = c(1,1), new.window = F, min.mem = 0.2, cex.axis = 1.4, x11=F, single =7, xaxt = "n", col.lab="transparent", col.main = "transparent")
+axis(side = 1,labels = FALSE)
+title(main = "Cluster 2\n (n = 1400)", col.main ="black")
+text(x = 1:3,
+     ## Move labels to just below bottom of chart.
+     y = par("usr")[3] - 0.45,
+     ## Use names from the data list.
+     labels = c("Bsl", "Vacc", "Vacc+RMD"),
+     ## Change the clipping region.
+     xpd = NA,
+     ## Rotate the labels by 35 degrees.
+     srt = 35,
+     ## Adjust the labels to almost 100% right-justified.
+     adj=0.4,
+     ## Increase label size.
+     cex = 1.4)
+
+dev.off()
+```
+
+
+
+7. Make the overlap plot
+
+PCA of the cluster centers. The lines indicate the overlap, the width makes reference to the stength of the overlap. 
+
+
+```{r}
+
+
+O.cl7 <- overlap(cl7)
+pdf("../Meth/Analysis450K/MFuzz/OverlapPlot_cl7.pdf")
+overlap.plot(cl7, over = O.cl7)
+dev.off()
+
+
+
+```
+
+8. Take the genes on each cluster and make the enrichment analysis
+
+```{r}
+genes_cluster <- acore(counts.matrix.s, cl7, min.acore = 0.2)
+genes_cluster[[1]]
+#Cluster 1
+Genes_cl1 <- genes_cluster[[1]]
+Genes_cl1$SYMBOL <- sapply(strsplit(rownames(Genes_cl1), "[.]"), function(x)x[2])
+Genes_cl1$CpG <- sapply(strsplit(rownames(Genes_cl1), "[.]"), function(x)x[1])
+write.table(Genes_cl1, file = "../Meth/Analysis450K/MFuzz/DNA_Cl1Genes.txt", sep = "\t")
+#SELECT GENES WITH DOUBLE ANNOTATION
+Genes_cl1.dup <- Genes_cl1[grep("_", Genes_cl1$SYMBOL),] 
+Genes_cl1.dup2 <- Genes_cl1[-grep("_", Genes_cl1$SYMBOL),]
+  
+df <- Genes_cl1.dup[1,]
+  
+    for(i in 1:dim(Genes_cl1.dup)[1]){
+    CpG <- Genes_cl1.dup$CpG[i]
+     DMP2 <- Genes_cl1.dup[which(Genes_cl1.dup$CpG == CpG),]
+     Name <- unlist(sapply(strsplit(as.character(DMP2$SYMBOL), "_"), unique))
+     n <- length(Name)
+     j = 0
+     while(j<n){
+       j = j+1
+       DMP2$SYMBOL <- as.character(Name[j])
+       df <- rbind(df, DMP2)
+    }}
+Genes_cl1.ok<- rbind(Genes_cl1.dup2, df[-1,])
+Genes_cl1.o <- Genes_cl1.ok[order(Genes_cl1.ok$MEM.SHIP, decreasing = T),]
+cl1_GSEA <- data.frame(Genes_cl1.o[,c(3,2)])
+rownames(cl1_GSEA) <- NULL
+colnames(cl1_GSEA) <- c("GeneName", "Rank")
+write.table(cl1_GSEA ,file = "../Meth/Analysis450K/MFuzz/DNA_Cl1Genes.rnk",
+            col.name = TRUE, sep="\t", row.names = FALSE, quote = FALSE)
+#Cluster 2
+Genes_cl2 <- genes_cluster[[2]]
+Genes_cl2$SYMBOL <- sapply(strsplit(rownames(Genes_cl2), "[.]"), function(x)x[2])
+Genes_cl2$CpG <- sapply(strsplit(rownames(Genes_cl2), "[.]"), function(x)x[1])
+write.table(Genes_cl2, file = "../Meth/Analysis450K/MFuzz/DNA_cl2Genes.txt", sep = "\t")
+#SELECT GENES WITH DOUBLE ANNOTATION
+Genes_cl2.dup <- Genes_cl2[grep("_", Genes_cl2$SYMBOL),] 
+Genes_cl2.dup2 <- Genes_cl2[-grep("_", Genes_cl2$SYMBOL),]
+  
+df <- Genes_cl2.dup[1,]
+  
+    for(i in 1:dim(Genes_cl2.dup)[1]){
+    CpG <- Genes_cl2.dup$CpG[i]
+     DMP2 <- Genes_cl2.dup[which(Genes_cl2.dup$CpG == CpG),]
+     Name <- unlist(sapply(strsplit(as.character(DMP2$SYMBOL), "_"), unique))
+     n <- length(Name)
+     j = 0
+     while(j<n){
+       j = j+1
+       DMP2$SYMBOL <- as.character(Name[j])
+       df <- rbind(df, DMP2)
+    }}
+Genes_cl2.ok<- rbind(Genes_cl2.dup2, df[-1,])
+Genes_cl2.o <- Genes_cl2.ok[order(Genes_cl2.ok$MEM.SHIP, decreasing = T),]
+cl2_GSEA <- data.frame(Genes_cl2.o[,c(3,2)])
+rownames(cl2_GSEA) <- NULL
+colnames(cl2_GSEA) <- c("GeneName", "Rank")
+write.table(cl2_GSEA ,file = "../Meth/Analysis450K/MFuzz/DNA_cl2Genes.rnk",
+            col.name = TRUE, sep="\t", row.names = FALSE, quote = FALSE)
+#Cluster 3
+Genes_cl3 <- genes_cluster[[3]]
+Genes_cl3$SYMBOL <- sapply(strsplit(rownames(Genes_cl3), "[.]"), function(x)x[2])
+Genes_cl3$CpG <- sapply(strsplit(rownames(Genes_cl3), "[.]"), function(x)x[1])
+write.table(Genes_cl3, file = "../Meth/Analysis450K/MFuzz/DNA_cl3Genes.txt", sep = "\t")
+#SELECT GENES WITH DOUBLE ANNOTATION
+Genes_cl3.dup <- Genes_cl3[grep("_", Genes_cl3$SYMBOL),] 
+Genes_cl3.dup2 <- Genes_cl3[-grep("_", Genes_cl3$SYMBOL),]
+  
+df <- Genes_cl3.dup[1,]
+  
+    for(i in 1:dim(Genes_cl3.dup)[1]){
+    CpG <- Genes_cl3.dup$CpG[i]
+     DMP2 <- Genes_cl3.dup[which(Genes_cl3.dup$CpG == CpG),]
+     Name <- unlist(sapply(strsplit(as.character(DMP2$SYMBOL), "_"), unique))
+     n <- length(Name)
+     j = 0
+     while(j<n){
+       j = j+1
+       DMP2$SYMBOL <- as.character(Name[j])
+       df <- rbind(df, DMP2)
+    }}
+Genes_cl3.ok<- rbind(Genes_cl3.dup2, df[-1,])
+Genes_cl3.o <- Genes_cl3.ok[order(Genes_cl3.ok$MEM.SHIP, decreasing = T),]
+cl3_GSEA <- data.frame(Genes_cl3.o[,c(3,2)])
+rownames(cl3_GSEA) <- NULL
+colnames(cl3_GSEA) <- c("GeneName", "Rank")
+write.table(cl3_GSEA ,file = "../Meth/Analysis450K/MFuzz/DNA_cl3Genes.rnk",
+            col.name = TRUE, sep="\t", row.names = FALSE, quote = FALSE)
+#Cluster 4
+Genes_cl4 <- genes_cluster[[4]]
+Genes_cl4$SYMBOL <- sapply(strsplit(rownames(Genes_cl4), "[.]"), function(x)x[2])
+Genes_cl4$CpG <- sapply(strsplit(rownames(Genes_cl4), "[.]"), function(x)x[1])
+write.table(Genes_cl4, file = "../Meth/Analysis450K/MFuzz/DNA_cl4Genes.txt", sep = "\t")
+#SELECT GENES WITH DOUBLE ANNOTATION
+Genes_cl4.dup <- Genes_cl4[grep("_", Genes_cl4$SYMBOL),] 
+Genes_cl4.dup2 <- Genes_cl4[-grep("_", Genes_cl4$SYMBOL),]
+  
+df <- Genes_cl4.dup[1,]
+  
+    for(i in 1:dim(Genes_cl4.dup)[1]){
+    CpG <- Genes_cl4.dup$CpG[i]
+     DMP2 <- Genes_cl4.dup[which(Genes_cl4.dup$CpG == CpG),]
+     Name <- unlist(sapply(strsplit(as.character(DMP2$SYMBOL), "_"), unique))
+     n <- length(Name)
+     j = 0
+     while(j<n){
+       j = j+1
+       DMP2$SYMBOL <- as.character(Name[j])
+       df <- rbind(df, DMP2)
+    }}
+Genes_cl4.ok<- rbind(Genes_cl4.dup2, df[-1,])
+Genes_cl4.o <- Genes_cl4.ok[order(Genes_cl4.ok$MEM.SHIP, decreasing = T),]
+cl4_GSEA <- data.frame(Genes_cl4.o[,c(3,2)])
+rownames(cl4_GSEA) <- NULL
+colnames(cl4_GSEA) <- c("GeneName", "Rank")
+write.table(cl4_GSEA ,file = "../Meth/Analysis450K/MFuzz/DNA_cl4Genes.rnk",
+            col.name = TRUE, sep="\t", row.names = FALSE, quote = FALSE)
+#Cluster 5
+Genes_cl5 <- genes_cluster[[5]]
+Genes_cl5$SYMBOL <- sapply(strsplit(rownames(Genes_cl5), "[.]"), function(x)x[2])
+Genes_cl5$CpG <- sapply(strsplit(rownames(Genes_cl5), "[.]"), function(x)x[1])
+write.table(Genes_cl5, file = "../Meth/Analysis450K/MFuzz/DNA_cl5Genes.txt", sep = "\t")
+#SELECT GENES WITH DOUBLE ANNOTATION
+Genes_cl5.dup <- Genes_cl5[grep("_", Genes_cl5$SYMBOL),] 
+Genes_cl5.dup2 <- Genes_cl5[-grep("_", Genes_cl5$SYMBOL),]
+  
+df <- Genes_cl5.dup[1,]
+  
+    for(i in 1:dim(Genes_cl5.dup)[1]){
+    CpG <- Genes_cl5.dup$CpG[i]
+     DMP2 <- Genes_cl5.dup[which(Genes_cl5.dup$CpG == CpG),]
+     Name <- unlist(sapply(strsplit(as.character(DMP2$SYMBOL), "_"), unique))
+     n <- length(Name)
+     j = 0
+     while(j<n){
+       j = j+1
+       DMP2$SYMBOL <- as.character(Name[j])
+       df <- rbind(df, DMP2)
+    }}
+Genes_cl5.ok<- rbind(Genes_cl5.dup2, df[-1,])
+Genes_cl5.o <- Genes_cl5.ok[order(Genes_cl5.ok$MEM.SHIP, decreasing = T),]
+cl5_GSEA <- data.frame(Genes_cl5.o[,c(3,2)])
+rownames(cl5_GSEA) <- NULL
+colnames(cl5_GSEA) <- c("GeneName", "Rank")
+write.table(cl5_GSEA ,file = "../Meth/Analysis450K/MFuzz/DNA_cl5Genes.rnk",
+            col.name = TRUE, sep="\t", row.names = FALSE, quote = FALSE)
+
+
+
+#Cluster 6
+Genes_cl6 <- genes_cluster[[6]]
+Genes_cl6$SYMBOL <- sapply(strsplit(rownames(Genes_cl6), "[.]"), function(x)x[2])
+Genes_cl6$CpG <- sapply(strsplit(rownames(Genes_cl6), "[.]"), function(x)x[1])
+write.table(Genes_cl6, file = "../Meth/Analysis450K/MFuzz/DNA_cl6Genes.txt", sep = "\t")
+#SELECT GENES WITH DOUBLE ANNOTATION
+Genes_cl6.dup <- Genes_cl6[grep("_", Genes_cl6$SYMBOL),] 
+Genes_cl6.dup2 <- Genes_cl6[-grep("_", Genes_cl6$SYMBOL),]
+  
+df <- Genes_cl6.dup[1,]
+  
+    for(i in 1:dim(Genes_cl6.dup)[1]){
+    CpG <- Genes_cl6.dup$CpG[i]
+     DMP2 <- Genes_cl6.dup[which(Genes_cl6.dup$CpG == CpG),]
+     Name <- unlist(sapply(strsplit(as.character(DMP2$SYMBOL), "_"), unique))
+     n <- length(Name)
+     j = 0
+     while(j<n){
+       j = j+1
+       DMP2$SYMBOL <- as.character(Name[j])
+       df <- rbind(df, DMP2)
+    }}
+Genes_cl6.ok<- rbind(Genes_cl6.dup2, df[-1,])
+Genes_cl6.o <- Genes_cl6.ok[order(Genes_cl6.ok$MEM.SHIP, decreasing = T),]
+cl6_GSEA <- data.frame(Genes_cl6.o[,c(3,2)])
+rownames(cl6_GSEA) <- NULL
+colnames(cl6_GSEA) <- c("GeneName", "Rank")
+write.table(cl6_GSEA ,file = "../Meth/Analysis450K/MFuzz/DNA_cl6Genes.rnk",
+            col.name = TRUE, sep="\t", row.names = FALSE, quote = FALSE)
+
+
+
+#Cluster 7
+Genes_cl7 <- genes_cluster[[7]]
+Genes_cl7$SYMBOL <- sapply(strsplit(rownames(Genes_cl7), "[.]"), function(x)x[2])
+Genes_cl7$CpG <- sapply(strsplit(rownames(Genes_cl7), "[.]"), function(x)x[1])
+write.table(Genes_cl7, file = "../Meth/Analysis450K/MFuzz/DNA_cl7Genes.txt", sep = "\t")
+#SELECT GENES WITH DOUBLE ANNOTATION
+Genes_cl7.dup <- Genes_cl7[grep("_", Genes_cl7$SYMBOL),] 
+Genes_cl7.dup2 <- Genes_cl7[-grep("_", Genes_cl7$SYMBOL),]
+  
+df <- Genes_cl7.dup[1,]
+  
+    for(i in 1:dim(Genes_cl7.dup)[1]){
+    CpG <- Genes_cl7.dup$CpG[i]
+     DMP2 <- Genes_cl7.dup[which(Genes_cl7.dup$CpG == CpG),]
+     Name <- unlist(sapply(strsplit(as.character(DMP2$SYMBOL), "_"), unique))
+     n <- length(Name)
+     j = 0
+     while(j<n){
+       j = j+1
+       DMP2$SYMBOL <- as.character(Name[j])
+       df <- rbind(df, DMP2)
+    }}
+Genes_cl7.ok<- rbind(Genes_cl7.dup2, df[-1,])
+Genes_cl7.o <- Genes_cl7.ok[order(Genes_cl7.ok$MEM.SHIP, decreasing = T),]
+cl7_GSEA <- data.frame(Genes_cl7.o[,c(3,2)])
+rownames(cl7_GSEA) <- NULL
+colnames(cl7_GSEA) <- c("GeneName", "Rank")
+write.table(cl7_GSEA ,file = "../Meth/Analysis450K/MFuzz/DNA_cl7Genes.rnk",
+            col.name = TRUE, sep="\t", row.names = FALSE, quote = FALSE)
+
+
+```
+
+
+```{r}
+genes_cluster <- acore(counts.matrix.s, cl7, min.acore = 0.2)
+genes_cluster[[1]]
+#Cluster 1
+Genes_cl1 <- genes_cluster[[1]]
+Genes_cl1$SYMBOL <- sapply(strsplit(rownames(Genes_cl1), "[.]"), function(x)x[2])
+Genes_cl1$CpG <- sapply(strsplit(rownames(Genes_cl1), "[.]"), function(x)x[1])
+write.table(Genes_cl1, file = "../Meth/Analysis450K/MFuzz/DNA_Cl1Genes.txt", sep = "\t")
+
+
+
+#Cluster 2
+Genes_cl2 <- genes_cluster[[2]]
+Genes_cl2$SYMBOL <- sapply(strsplit(rownames(Genes_cl2), "[.]"), function(x)x[2])
+Genes_cl2$CpG <- sapply(strsplit(rownames(Genes_cl2), "[.]"), function(x)x[1])
+write.table(Genes_cl2, file = "../Meth/Analysis450K/MFuzz/DNA_cl2Genes.txt", sep = "\t")
+
+
+#Cluster 3
+Genes_cl3 <- genes_cluster[[3]]
+Genes_cl3$SYMBOL <- sapply(strsplit(rownames(Genes_cl3), "[.]"), function(x)x[2])
+Genes_cl3$CpG <- sapply(strsplit(rownames(Genes_cl3), "[.]"), function(x)x[1])
+write.table(Genes_cl3, file = "../Meth/Analysis450K/MFuzz/DNA_cl3Genes.txt", sep = "\t")
+
+
+#Cluster 4
+Genes_cl4 <- genes_cluster[[4]]
+Genes_cl4$SYMBOL <- sapply(strsplit(rownames(Genes_cl4), "[.]"), function(x)x[2])
+Genes_cl4$CpG <- sapply(strsplit(rownames(Genes_cl4), "[.]"), function(x)x[1])
+write.table(Genes_cl4, file = "../Meth/Analysis450K/MFuzz/DNA_cl4Genes.txt", sep = "\t")
+
+
+#Cluster 5
+Genes_cl5 <- genes_cluster[[5]]
+Genes_cl5$SYMBOL <- sapply(strsplit(rownames(Genes_cl5), "[.]"), function(x)x[2])
+Genes_cl5$CpG <- sapply(strsplit(rownames(Genes_cl5), "[.]"), function(x)x[1])
+write.table(Genes_cl5, file = "../Meth/Analysis450K/MFuzz/DNA_cl5Genes.txt", sep = "\t")
+
+
+#Cluster 6
+Genes_cl6 <- genes_cluster[[6]]
+Genes_cl6$SYMBOL <- sapply(strsplit(rownames(Genes_cl6), "[.]"), function(x)x[2])
+Genes_cl6$CpG <- sapply(strsplit(rownames(Genes_cl6), "[.]"), function(x)x[1])
+write.table(Genes_cl6, file = "../Meth/Analysis450K/MFuzz/DNA_cl6Genes.txt", sep = "\t")
+
+
+#Cluster 7
+Genes_cl7 <- genes_cluster[[7]]
+Genes_cl7$SYMBOL <- sapply(strsplit(rownames(Genes_cl7), "[.]"), function(x)x[2])
+Genes_cl7$CpG <- sapply(strsplit(rownames(Genes_cl7), "[.]"), function(x)x[1])
+write.table(Genes_cl7, file = "../Meth/Analysis450K/MFuzz/DNA_cl7Genes.txt", sep = "\t")
+
+```

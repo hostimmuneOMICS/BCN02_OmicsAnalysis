@@ -1,0 +1,682 @@
+---
+title: "Plots_GSEA and correlation"
+author: "Bruna Oriol"
+date: "15/3/2021"
+output: html_document
+---
+
+# GSEA DEGs w1-w0
+
+## Barplot Enrichment 
+```{r}
+library(ggplot2)
+library(RColorBrewer)
+
+#Load enrichment table
+NES_w1w0 <- read.table("~/../../Volumes/Sintítulo/DraftBCN02/Part1Plots_X/GSEA_DEGs_v2.txt", sep = "\t", header = TRUE)
+
+NES_w1w0 <- NES_w1w0[order(NES_w1w0$NES, decreasing = FALSE),]
+
+NES_w1w0$col <- factor(ifelse(NES_w1w0$NES >0, "Red", "Blue"))
+NES_w1w0$NES2 <- factor(ifelse(NES_w1w0$NES >0, "Pos", "Neg"))
+
+Lab <- NES_w1w0$NAME3
+NES_w1w0$NAME3 <- factor(NES_w1w0$NAME3, levels = Lab)
+
+
+#Barplot with names
+p <- ggplot(data = NES_w1w0, aes(x=NAME3, y = NES)) +
+  geom_bar(stat = "identity", fill = NES_w1w0$col) + coord_flip() + theme(axis.text = element_text( color = "black", size = 12), panel.background = element_rect(fill = "white", colour = "black") )
+p
+
+
+#Remove axis text with theme(axis.text = element_blank())
+p <- ggplot(data = NES_w1w0, aes(x=NAME3, y = NES)) +
+  geom_bar(stat = "identity", fill = NES_w1w0$col) + coord_flip() + theme(axis.text.y = element_blank(), axis.text.x = element_text( color = "black", size = 12), panel.background = element_rect(fill = "white", colour = "black"), axis.title.y = element_blank() )
+
+p
+
+
+```
+
+
+# GSEA DMPs w1-w0
+
+## Barplot Enrichment 
+
+```{r}
+#Load enrichment table
+library(ggplot2)
+library(RColorBrewer)
+NES_w1w0 <- read.table("~/../../Volumes/Sintítulo/DraftBCN02/Part1Plots/DMPw1w0toplot_top15.txt", sep = "\t", header = TRUE)
+NES_w1w0 <- NES_w1w0[order(NES_w1w0$NES, decreasing = FALSE),]
+
+display.brewer.pal(8, "Greys")
+Greys <- brewer.pal(8, "Greys")
+Grey3 <- Greys[3]
+Grey6 <- Greys[6]
+
+NES_w1w0$col <- factor(ifelse(NES_w1w0$NES >0, "Red", "Blue"))
+NES_w1w0$NES2 <- factor(ifelse(NES_w1w0$NES >0, "Pos", "Neg"))
+
+Lab <- NES_w1w0$NAME3
+NES_w1w0$NAME3 <- factor(NES_w1w0$NAME3, levels = Lab)
+
+
+#Barplot with names
+p <- ggplot(data = NES_w1w0, aes(x=NAME3, y = NES)) +
+  geom_bar(stat = "identity", fill = NES_w1w0$col) + coord_flip() + theme(axis.text = element_text( color = "black", size = 6), panel.background = element_rect(fill = "white", colour = "black") , axis.title = element_text(size=7))
+p
+
+
+#With no pathway names. To have the same size than with gene ex`ression
+p <- ggplot(data = NES_w1w0, aes(x=NAME3, y = NES)) +
+  geom_bar(stat = "identity", fill = NES_w1w0$col) + coord_flip() + theme(axis.text.y = element_blank(), axis.text.x = element_text( color = "black", size = 12), panel.background = element_rect(fill = "white", colour = "black"), axis.title.y = element_blank() )
+p
+
+```
+
+
+# Correlation analysis of Gene expression (Vacc/BSL) and T-cell responses (Vacc/BSL)
+
+```{r}
+rm(list = ls())
+
+#Load data
+DEGw1w0 <- read.table("../RNASeq/DEGweeks/LimmaBlock w1vsw0.txt")
+DEGw1w0  <- subset(DEGw1w0, DEGw1w0$P.Value < 0.05)
+
+DEGw1w0$Gene <- sapply(strsplit(rownames(DEGw1w0), ","), function(x)x[2])
+DEGw1w0$Biotype <- sapply(strsplit(rownames(DEGw1w0), ","), function(x)x[3])
+
+DEGw1w0 <- subset(DEGw1w0, DEGw1w0$Biotype == "protein_coding"|DEGw1w0$Biotype == "IG_V_gene"|DEGw1w0$Biotype == "IG_C_gene")
+
+
+#Remove duplicates
+dup <- which(duplicated(DEGw1w0) == TRUE)
+dupDEG <- DEGw1w0[dup,]
+dupGene <- dupDEG$Gene
+
+DEGw1w0_dup <- subset(DEGw1w0, DEGw1w0$Gene %in% dupGene)
+DEGw1w0.ok <- DEGw1w0[-dup,]
+
+#Take the count matrix of DEGs
+counts <- read.table("../RNASeq/Log2NormalizedCounts.txt")
+counts <- counts[rownames(DEGw1w0.ok), ]
+rownames(counts) <- DEGw1w0.ok$Gene
+
+
+#Betas_w6
+counts.w0 <- counts[, grep("w0", colnames(counts))]
+counts.w1 <- counts[, grep("w1", colnames(counts))]
+
+countsDif <- counts.w1-counts.w0
+colnames(countsDif) <- sapply(strsplit(colnames(countsDif), "[.]"), function(x)x[1])
+
+
+df <- data.frame(rownames(countsDif ),DEGw1w0.ok$Gene  )
+
+
+
+index.varsel <- as.numeric(seq(1, length(rownames(countsDif)),1))#Index de les variables seleccionades
+length(index.varsel)
+# Read clinical parameters file
+
+
+#Load clinical parameters
+cl_params <- read.table("~/../../Volumes/Sintítulo/DraftBCN02/Part1Plots/ELISpotData.txt", sep = "\t", header = TRUE)
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params) <- cl_params$X
+colnames(cl_params) <- c("patient", colnames(cl_params)[-1])
+
+
+# Transpose beta values for selected cg --> Patients in rows now and cg probes in columns
+# there's no longer the name of the cg
+Data3 <- t(as.matrix(countsDif))
+Data3[1:10, 1:10]
+dim(Data3)
+
+cl_params <- cl_params[rownames(Data3),]
+```
+
+
+## FC Magnitude
+```{r}
+### 2.1. Correlation with   
+
+# Bind to Data 3 the values of HIVconsv_magnitude
+Data3_HIVconsv_Magn <- cbind(Data3, cl_params$MagnHIVconsv_FCw1w0)
+colnames(Data3_HIVconsv_Magn)[ncol(Data3_HIVconsv_Magn)] <- "FC_HIVconsvMagn"
+rownames(Data3_HIVconsv_Magn)
+id2 <- colnames(Data3_HIVconsv_Magn)
+Data3_HIVconsv_Magn <- apply(Data3_HIVconsv_Magn, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with HIVconsv_magnitude
+library(Hmisc)
+res_corrHIVconsv_Magn <- rcorr(Data3_HIVconsv_Magn,type="spearman") #Correlation between columns
+mat_corrHIVconsv_Magn <- res_corrHIVconsv_Magn$r
+pval_corrHIVconsv_Magn <- res_corrHIVconsv_Magn$P
+
+#Select all the correlations with HIVconsv_magnitude
+df_HIVconsv_Magn <- data.frame(mat_corrHIVconsv_Magn[nrow(mat_corrHIVconsv_Magn),], pval_corrHIVconsv_Magn[nrow(pval_corrHIVconsv_Magn),])
+
+df_HIVconsv_Magn$Name <- c(rownames(df_HIVconsv_Magn))
+df_HIVconsv_Magn$class <- "FC_HIVconsvMagn"
+colnames(df_HIVconsv_Magn) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of HIVconsv_magnitude with HIVconsv_magnitude, only correlations of CpG with HIVconsv_magnitude now
+df_HIVconsv_Magn <- df_HIVconsv_Magn[-nrow(df_HIVconsv_Magn),]
+df_HIVconsv_Magn$qvalue <- p.adjust(df_HIVconsv_Magn$pval, method = "fdr")
+df_HIVconsv_Magn <- df_HIVconsv_Magn[order(abs(df_HIVconsv_Magn$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+#Try
+cor.test(as.numeric(Data3[,"NAPEPLD"]), cl_params$MagnHIVconsv_FCw1w0, method = "spearman") # Rho-0.6395604 , p = -0.016
+
+df_HIVconsv_Magn.sig <- subset(df_HIVconsv_Magn, df_HIVconsv_Magn$pval < 0.05 & abs(df_HIVconsv_Magn$Rho) > 0.6)
+
+library(corrplot)
+res_corrFCHIVconsv_Magn <- rcorr(Data3_HIVconsv_Magn[,c(rownames(df_HIVconsv_Magn.sig), "FC_HIVconsvMagn")],type="spearman") #Correlation between columns
+
+
+#Corrplot 
+corrplot(res_corrFCHIVconsv_Magn$r, type = "upper", p.mat = res_corrFCHIVconsv_Magn$P, sig.level = 0.05, insig = "blank",
+         tl.col = "black", tl.srt = 45, tl.cex = 0.6)
+
+
+```
+
+## FC Magnitude -HIV total
+```{r}
+### 2.1. Correlation with   
+
+# Bind to Data 3 the values of HIVtotal_magnitude
+Data3_HIVtotal_Magn <- cbind(Data3, cl_params$MagnHIVconsv_FCw1w0)
+colnames(Data3_HIVtotal_Magn)[ncol(Data3_HIVtotal_Magn)] <- "FC_HIVtotalMagn"
+rownames(Data3_HIVtotal_Magn)
+id2 <- colnames(Data3_HIVtotal_Magn)
+Data3_HIVtotal_Magn <- apply(Data3_HIVtotal_Magn, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with HIVtotal_magnitude
+library(Hmisc)
+res_corrHIVtotal_Magn <- rcorr(Data3_HIVtotal_Magn,type="spearman") #Correlation between columns
+mat_corrHIVtotal_Magn <- res_corrHIVtotal_Magn$r
+pval_corrHIVtotal_Magn <- res_corrHIVtotal_Magn$P
+
+#Select all the correlations with HIVtotal_magnitude
+df_HIVtotal_Magn <- data.frame(mat_corrHIVtotal_Magn[nrow(mat_corrHIVtotal_Magn),], pval_corrHIVtotal_Magn[nrow(pval_corrHIVtotal_Magn),])
+
+df_HIVtotal_Magn$Name <- c(rownames(df_HIVtotal_Magn))
+df_HIVtotal_Magn$class <- "FC_HIVtotalMagn"
+colnames(df_HIVtotal_Magn) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of HIVtotal_magnitude with HIVtotal_magnitude, only correlations of CpG with HIVtotal_magnitude now
+df_HIVtotal_Magn <- df_HIVtotal_Magn[-nrow(df_HIVtotal_Magn),]
+df_HIVtotal_Magn$qvalue <- p.adjust(df_HIVtotal_Magn$pval, method = "fdr")
+df_HIVtotal_Magn <- df_HIVtotal_Magn[order(abs(df_HIVtotal_Magn$Rho), decreasing = TRUE ),] # Decreasing rho order
+cor.test(as.numeric(Data3[,"RNFT2"]), cl_params$MagnHIVconsv_FCw1w0, method = "spearman") # Rho-0.6395604 , p = -0.016
+
+df_HIVtotal_Magn.sig <- subset(df_HIVtotal_Magn, df_HIVtotal_Magn$pval < 0.05 & abs(df_HIVtotal_Magn$Rho) > 0.6)
+
+library(corrplot)
+res_corrFCHIVtotal_Magn <- rcorr(Data3_HIVtotal_Magn[,c(rownames(df_HIVtotal_Magn.sig), "FC_HIVtotalMagn")],type="spearman") #Correlation between columns
+
+
+```
+
+
+## FC Breadth HIVconsv
+```{r}
+### 2.1. Correlation with   
+
+# Bind to Data 3 the values of HIVconsv_Bitude
+Data3_HIVconsv_B <- cbind(Data3, cl_params$BHIVconsv_FCw1.w0)
+colnames(Data3_HIVconsv_B)[ncol(Data3_HIVconsv_B)] <- "FC_HIVconsvB"
+rownames(Data3_HIVconsv_B)
+id2 <- colnames(Data3_HIVconsv_B)
+Data3_HIVconsv_B <- apply(Data3_HIVconsv_B, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with HIVconsv_Bitude
+library(Hmisc)
+res_corrHIVconsv_B <- rcorr(Data3_HIVconsv_B,type="spearman") #Correlation between columns
+mat_corrHIVconsv_B <- res_corrHIVconsv_B$r
+pval_corrHIVconsv_B <- res_corrHIVconsv_B$P
+
+#Select all the correlations with HIVconsv_Bitude
+df_HIVconsv_B <- data.frame(mat_corrHIVconsv_B[nrow(mat_corrHIVconsv_B),], pval_corrHIVconsv_B[nrow(pval_corrHIVconsv_B),])
+
+df_HIVconsv_B$Name <- c(rownames(df_HIVconsv_B))
+df_HIVconsv_B$class <- "FC_HIVconsvB"
+colnames(df_HIVconsv_B) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of HIVconsv_Bitude with HIVconsv_Bitude, only correlations of CpG with HIVconsv_Bitude now
+df_HIVconsv_B <- df_HIVconsv_B[-nrow(df_HIVconsv_B),]
+df_HIVconsv_B$qvalue <- p.adjust(df_HIVconsv_B$pval, method = "fdr")
+df_HIVconsv_B <- df_HIVconsv_B[order(abs(df_HIVconsv_B$Rho), decreasing = TRUE ),] # Decreasing rho order
+cor.test(as.numeric(Data3_HIVconsv_B[,"TNFSF9"]), cl_params$BHIVconsv_FCw1.w0, method = "spearman") # Rho-0.6395604 , p = -0.016
+
+df_HIVconsv_B.sig <- subset(df_HIVconsv_B, df_HIVconsv_B$pval < 0.05 & abs(df_HIVconsv_B$Rho) > 0.6)
+
+library(corrplot)
+res_corrFCHIVconsv_B <- rcorr(Data3_HIVconsv_B[,c(rownames(df_HIVconsv_B.sig), "FC_HIVconsvB")],type="spearman") #Correlation between columns
+
+corrplot(res_corrFCHIVconsv_B$r, type = "upper", p.mat = res_corrFCHIVconsv_B$P, sig.level = 0.05, insig = "blank",
+         tl.col = "black", tl.srt = 45, tl.cex = 0.6)
+
+```
+
+
+
+
+## FC Breadth HIVtotal
+```{r}
+### 2.1. Correlation with   
+
+# Bind to Data 3 the values of HIVtotal_Bitude
+Data3_HIVtotal_B <- cbind(Data3, cl_params$BHIVtotal_FCw1.w0)
+colnames(Data3_HIVtotal_B)[ncol(Data3_HIVtotal_B)] <- "FC_HIVtotalB"
+rownames(Data3_HIVtotal_B)
+id2 <- colnames(Data3_HIVtotal_B)
+Data3_HIVtotal_B <- apply(Data3_HIVtotal_B, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with HIVtotal_Bitude
+library(Hmisc)
+res_corrHIVtotal_B <- rcorr(Data3_HIVtotal_B,type="spearman") #Correlation between columns
+mat_corrHIVtotal_B <- res_corrHIVtotal_B$r
+pval_corrHIVtotal_B <- res_corrHIVtotal_B$P
+
+#Select all the correlations with HIVtotal_Bitude
+df_HIVtotal_B <- data.frame(mat_corrHIVtotal_B[nrow(mat_corrHIVtotal_B),], pval_corrHIVtotal_B[nrow(pval_corrHIVtotal_B),])
+
+df_HIVtotal_B$Name <- c(rownames(df_HIVtotal_B))
+df_HIVtotal_B$class <- "FC_HIVtotalB"
+colnames(df_HIVtotal_B) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of HIVtotal_Bitude with HIVtotal_Bitude, only correlations of CpG with HIVtotal_Bitude now
+df_HIVtotal_B <- df_HIVtotal_B[-nrow(df_HIVtotal_B),]
+df_HIVtotal_B$qvalue <- p.adjust(df_HIVtotal_B$pval, method = "fdr")
+df_HIVtotal_B <- df_HIVtotal_B[order(abs(df_HIVtotal_B$Rho), decreasing = TRUE ),] # Decreasing rho order
+cor.test(as.numeric(Data3[,"RNFT2"]), cl_params$BHIVtotal_FCw1.w0, method = "spearman") # Rho-0.6395604 , p = -0.016
+
+df_HIVtotal_B.sig <- subset(df_HIVtotal_B, df_HIVtotal_B$pval < 0.05 & abs(df_HIVtotal_B$Rho) > 0.6)
+
+library(corrplot)
+res_corrFCHIVtotal_B <- rcorr(Data3_HIVtotal_B[,c(rownames(df_HIVtotal_B.sig), "FC_HIVtotalB")],type="spearman") #Correlation between columns
+
+corrplot(res_corrFCHIVtotal_B$r, type = "upper", p.mat = res_corrFCHIVtotal_B$P, sig.level = 0.05, insig = "blank",
+         tl.col = "black", tl.srt = 45, tl.cex = 0.6)
+
+```
+
+
+## Make a corrplot of all parameters. Using Fold change
+```{r}
+### 2.1. Correlation with   
+
+# Bind to Data 3 the values of HIVconsv_magnitude
+Data3_HIVconsv_Magn <- cbind(Data3, cbind(cl_params$MagnHIVconsv_FCw1w0,cbind(cl_params$MagnHIVtotal_FCw1w0, cbind(cl_params$BHIVconsv_FCw1.w0), cl_params$BHIVtotal_FCw1.w0)))
+
+colnames(Data3_HIVconsv_Magn) <- c(colnames(Data3), "Magnitude HIVconsv", "Magnitude HIVtotal", "Breadth HIVconsv", "Breadth HIVtotal")
+
+rownames(Data3_HIVconsv_Magn)
+id2 <- colnames(Data3_HIVconsv_Magn)
+Data3_HIVconsv_Magn <- apply(Data3_HIVconsv_Magn, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with HIVconsv_magnitude
+library(Hmisc)
+res_corrHIVconsv_Magn <- rcorr(Data3_HIVconsv_Magn,type="spearman") #Correlation between columns
+mat_corrHIVconsv_Magn <- res_corrHIVconsv_Magn$r
+pval_corrHIVconsv_Magn <- res_corrHIVconsv_Magn$P
+
+dim(Data3)
+
+#Select all the correlations with HIVconsv_magnitude
+df1 <- data.frame(mat_corrHIVconsv_Magn[889,], pval_corrHIVconsv_Magn[889,])
+df1$Name <- c(rownames(df1))
+df1$class <- "Magnitude-HIVconsv"
+colnames(df1) <- c( "Rho", "pval", "Name","clinical_param")
+
+df2 <- data.frame(mat_corrHIVconsv_Magn[890,], pval_corrHIVconsv_Magn[890,])
+df2$Name <- c(rownames(df2))
+df2$class <- "Magnitude-HIVtotal"
+colnames(df2) <- c( "Rho", "pval", "Name","clinical_param")
+
+
+df3 <- data.frame(mat_corrHIVconsv_Magn[891,], pval_corrHIVconsv_Magn[891,])
+df3$Name <- c(rownames(df3))
+df3$class <- "Breadth-HIVconsv"
+colnames(df3) <- c( "Rho", "pval", "Name","clinical_param")
+
+df4 <- data.frame(mat_corrHIVconsv_Magn[892,], pval_corrHIVconsv_Magn[892,])
+df4$Name <- c(rownames(df4))
+df4$class <- "Breadth-HIVtotal"
+colnames(df4) <- c( "Rho", "pval", "Name","clinical_param")
+
+library(tidyverse)
+df.all <- bind_rows(list(df1,df2,df3,df4))
+# Eliminate correlation of HIVconsv_magnitude with HIVconsv_magnitude, only correlations of CpG 
+dfall.sig <- subset(df.all, df.all$pval < 0.05 & abs(df.all$Rho) > 0.6)
+
+
+library(corrplot)
+
+#Remove Magnitude, Breadt... form df.all.names
+df.all.names <- dfall.sig [-grep("Magn|Bread", dfall.sig$Name),]
+dfall.sig[grep("Magn|Bread", unique(dfall.sig $Name)),]
+
+Data3.all <- Data3_HIVconsv_Magn[,c(unique(df.all.names$Name), "Magnitude HIVconsv", "Magnitude HIVtotal", "Breadth HIVconsv", "Breadth HIVtotal" )]
+res_all <- rcorr(Data3.all, type = "spearman")
+
+
+
+corrplot(res_all$r, type = "upper", p.mat = res_all$P, sig.level = 0.05, insig = "blank",
+         tl.col = "black", tl.srt = 45, tl.cex = 0.7)
+
+```
+
+
+ 
+# Correlation analysis DMPs (Vacc/BSL) and T-cell responses (Vacc/BSL)
+
+
+```{r}
+rm(list = ls())
+
+#Load data
+DMPw1w0 <- read.table("../Meth/Analysis450K/OutputFiles/DMPs_weeks/LimmaBlockAnnot/ w1vsw0.txt", stringsAsFactors = F)
+DMPw1w0  <- subset(DMPw1w0, DMPw1w0$P.Value < 0.05)
+
+DMPw1w0$Gene <- sapply(sapply(strsplit(DMPw1w0$UCSC_RefGene_Name, ";"), unique), function(x) ifelse(length(x) > 1, paste(x[1], x[2], sep ="_"), x[1])) 
+
+DMPw1w0 <- DMPw1w0[grep("^cg", DMPw1w0$Row.names),]
+
+
+#Take the count matrix of DMPs
+DNAm <- read.table(file = "../Meth/Analysis450K/OutputFiles/QNMval_sel.txt" )
+DNAm <- DNAm[, grep("w0|w1$|w6", colnames(DNAm))]
+DNAm <- DNAm[DMPw1w0$Row.names,]
+
+#M values w0 and w1
+DNAm.w0 <- DNAm[, grep("w0", colnames(DNAm))]
+DNAm.w1 <- DNAm[, grep("w1", colnames(DNAm))]
+
+DNAmDif <- DNAm.w1-DNAm.w0
+colnames(DNAmDif) <- sapply(strsplit(colnames(DNAmDif), "[.]"), function(x)x[1])
+
+
+df <- data.frame(rownames(DNAmDif), DMPw1w0$Row.names)
+
+rownames(DNAmDif) <- paste(DMPw1w0$Row.names, DMPw1w0$Gene, sep = ".")
+
+
+
+index.varsel <- as.numeric(seq(1, length(rownames(DNAmDif)),1))#Index de les variables seleccionades
+length(index.varsel)
+# Read clinical parameters file
+
+
+
+cl_params <- read.table("~/../../Volumes/Sintítulo/DraftBCN02/Part1Plots/ELISpotData.txt", sep = "\t", header = TRUE)
+  ### grup: ctrl/ no ctrl
+  ### VL
+  ### CD4 counts
+  ### breadth CTL
+  ### Magnitude CTL
+  ### nAB --> NL43 i BAL
+  ### DNA proviral
+# Subset VL, CD4 and proviral
+rownames(cl_params) <- cl_params$X
+colnames(cl_params) <- c("patient", colnames(cl_params)[-1])
+
+
+# Transpose beta values for selected cg --> Patients in rows now and cg probes in columns
+# there's no longer the name of the cg
+Data3 <- t(as.matrix(DNAmDif))
+Data3[1:10, 1:10]
+dim(Data3)
+
+cl_params <- cl_params[rownames(Data3),]
+```
+
+
+## FC Magnitude HIVconsv
+```{r}
+### 2.1. Correlation with   
+
+# Bind to Data 3 the values of HIVconsv_magnitude
+Data3_HIVconsv_Magn <- cbind(Data3, cl_params$MagnHIVconsv_FCw1w0)
+colnames(Data3_HIVconsv_Magn)[ncol(Data3_HIVconsv_Magn)] <- "FC_HIVconsvMagn"
+rownames(Data3_HIVconsv_Magn)
+id2 <- colnames(Data3_HIVconsv_Magn)
+Data3_HIVconsv_Magn <- apply(Data3_HIVconsv_Magn, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with HIVconsv_magnitude
+library(Hmisc)
+res_corrHIVconsv_Magn <- rcorr(Data3_HIVconsv_Magn,type="spearman") #Correlation between columns
+mat_corrHIVconsv_Magn <- res_corrHIVconsv_Magn$r
+pval_corrHIVconsv_Magn <- res_corrHIVconsv_Magn$P
+
+#Select all the correlations with HIVconsv_magnitude
+df_HIVconsv_Magn <- data.frame(mat_corrHIVconsv_Magn[nrow(mat_corrHIVconsv_Magn),], pval_corrHIVconsv_Magn[nrow(pval_corrHIVconsv_Magn),])
+
+df_HIVconsv_Magn$Name <- c(rownames(df_HIVconsv_Magn))
+df_HIVconsv_Magn$class <- "FC_HIVconsvMagn"
+colnames(df_HIVconsv_Magn) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of HIVconsv_magnitude with HIVconsv_magnitude, only correlations of CpG with HIVconsv_magnitude now
+df_HIVconsv_Magn <- df_HIVconsv_Magn[-nrow(df_HIVconsv_Magn),]
+df_HIVconsv_Magn$qvalue <- p.adjust(df_HIVconsv_Magn$pval, method = "fdr")
+df_HIVconsv_Magn <- df_HIVconsv_Magn[order(abs(df_HIVconsv_Magn$Rho), decreasing = TRUE ),] # Decreasing rho order
+cor.test(as.numeric(Data3[,"cg02033323.FOXP3"]), cl_params$MagnHIVconsv_FCw1w0, method = "spearman") # Rho = 0.7362637  , p = -0.003
+
+df_HIVconsv_Magn.sig <- subset(df_HIVconsv_Magn, df_HIVconsv_Magn$pval < 0.01 & abs(df_HIVconsv_Magn$Rho) > 0.6)
+
+
+res_corrFCHIVconsv_Magn <- rcorr(Data3_HIVconsv_Magn[,c(rownames(df_HIVconsv_Magn.sig), "FC_HIVconsvMagn")],type="spearman") #Correlation between columns
+
+library(corrplot)
+corrplot(res_corrFCHIVconsv_Magn$r, type = "upper", p.mat = res_corrFCHIVconsv_Magn$P, sig.level = 0.01, insig = "blank",
+         tl.col = "black", tl.srt = 45, tl.cex = 0.4)
+
+```
+
+
+
+## FC Magnitude -HIV total
+```{r}
+### 2.1. Correlation with   
+
+# Bind to Data 3 the values of HIVtotal_magnitude
+Data3_HIVtotal_Magn <- cbind(Data3, cl_params$MagnHIVconsv_FCw1w0)
+colnames(Data3_HIVtotal_Magn)[ncol(Data3_HIVtotal_Magn)] <- "FC_HIVtotalMagn"
+rownames(Data3_HIVtotal_Magn)
+id2 <- colnames(Data3_HIVtotal_Magn)
+Data3_HIVtotal_Magn <- apply(Data3_HIVtotal_Magn, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with HIVtotal_magnitude
+library(Hmisc)
+res_corrHIVtotal_Magn <- rcorr(Data3_HIVtotal_Magn,type="spearman") #Correlation between columns
+mat_corrHIVtotal_Magn <- res_corrHIVtotal_Magn$r
+pval_corrHIVtotal_Magn <- res_corrHIVtotal_Magn$P
+
+#Select all the correlations with HIVtotal_magnitude
+df_HIVtotal_Magn <- data.frame(mat_corrHIVtotal_Magn[nrow(mat_corrHIVtotal_Magn),], pval_corrHIVtotal_Magn[nrow(pval_corrHIVtotal_Magn),])
+
+df_HIVtotal_Magn$Name <- c(rownames(df_HIVtotal_Magn))
+df_HIVtotal_Magn$class <- "FC_HIVtotalMagn"
+colnames(df_HIVtotal_Magn) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of HIVtotal_magnitude with HIVtotal_magnitude, only correlations of CpG with HIVtotal_magnitude now
+df_HIVtotal_Magn <- df_HIVtotal_Magn[-nrow(df_HIVtotal_Magn),]
+df_HIVtotal_Magn$qvalue <- p.adjust(df_HIVtotal_Magn$pval, method = "fdr")
+df_HIVtotal_Magn <- df_HIVtotal_Magn[order(abs(df_HIVtotal_Magn$Rho), decreasing = TRUE ),] # Decreasing rho order
+cor.test(as.numeric(Data3[,"cg18305147.MAP4"]), cl_params$MagnHIVconsv_FCw1w0, method = "spearman") # Rho0.7978022  , p = 0.001
+
+df_HIVtotal_Magn.sig <- subset(df_HIVtotal_Magn, df_HIVtotal_Magn$pval < 0.01 & abs(df_HIVtotal_Magn$Rho) > 0.6)
+
+library(corrplot)
+res_corrFCHIVtotal_Magn <- rcorr(Data3_HIVtotal_Magn[,c(rownames(df_HIVtotal_Magn.sig), "FC_HIVtotalMagn")],type="spearman") #Correlation between columns
+
+corrplot(res_corrFCHIVtotal_Magn$r, type = "upper", p.mat = res_corrFCHIVtotal_Magn$P, sig.level = 0.01, insig = "blank",
+         tl.col = "black", tl.srt = 45, tl.cex = 0.6)
+```
+
+
+## FC Breadth HIVconsv
+```{r}
+### 2.1. Correlation with   
+
+# Bind to Data 3 the values of HIVconsv_Bitude
+Data3_HIVconsv_B <- cbind(Data3, cl_params$BHIVconsv_w1.w0)
+colnames(Data3_HIVconsv_B)[ncol(Data3_HIVconsv_B)] <- "FC_HIVconsvB"
+rownames(Data3_HIVconsv_B)
+id2 <- colnames(Data3_HIVconsv_B)
+Data3_HIVconsv_B <- apply(Data3_HIVconsv_B, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with HIVconsv_Bitude
+library(Hmisc)
+res_corrHIVconsv_B <- rcorr(Data3_HIVconsv_B,type="spearman") #Correlation between columns
+mat_corrHIVconsv_B <- res_corrHIVconsv_B$r
+pval_corrHIVconsv_B <- res_corrHIVconsv_B$P
+
+#Select all the correlations with HIVconsv_Bitude
+df_HIVconsv_B <- data.frame(mat_corrHIVconsv_B[nrow(mat_corrHIVconsv_B),], pval_corrHIVconsv_B[nrow(pval_corrHIVconsv_B),])
+
+df_HIVconsv_B$Name <- c(rownames(df_HIVconsv_B))
+df_HIVconsv_B$class <- "FC_HIVconsvB"
+colnames(df_HIVconsv_B) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of HIVconsv_Bitude with HIVconsv_Bitude, only correlations of CpG with HIVconsv_Bitude now
+df_HIVconsv_B <- df_HIVconsv_B[-nrow(df_HIVconsv_B),]
+df_HIVconsv_B$qvalue <- p.adjust(df_HIVconsv_B$pval, method = "fdr")
+df_HIVconsv_B <- df_HIVconsv_B[order(abs(df_HIVconsv_B$Rho), decreasing = TRUE ),] # Decreasing rho order
+cor.test(as.numeric(Data3[,"cg02033323.FOXP3"]), cl_params$BHIVconsv_FCw1.w0, method = "spearman") # Rho 0.7660119  , p = 0.001
+
+df_HIVconsv_B.sig <- subset(df_HIVconsv_B, df_HIVconsv_B$pval < 0.01 & abs(df_HIVconsv_B$Rho) > 0.6)
+
+library(corrplot)
+res_corrFCHIVconsv_B <- rcorr(Data3_HIVconsv_B[,c(rownames(df_HIVconsv_B.sig), "FC_HIVconsvB")],type="spearman") #Correlation between columns
+
+corrplot(res_corrFCHIVconsv_B$r, type = "upper", p.mat = res_corrFCHIVconsv_B$P, sig.level = 0.01, insig = "blank",
+         tl.col = "black", tl.srt = 45, tl.cex = 0.6)
+
+
+
+```
+
+
+
+#FC Breadth HIV total
+```{r}
+### 2.1. Correlation with   
+
+# Bind to Data 3 the values of HIVtotal_Bitude
+Data3_HIVtotal_B <- cbind(Data3,data.frame(cl_params$BHIVtotal_FCw1.w0))
+colnames(Data3_HIVtotal_B)[ncol(Data3_HIVtotal_B)] <- "FC_HIVtotalB"
+rownames(Data3_HIVtotal_B)
+id2 <- colnames(Data3_HIVtotal_B)
+Data3_HIVtotal_B <- apply(Data3_HIVtotal_B, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with HIVtotal_Bitude
+library(Hmisc)
+res_corrHIVtotal_B <- rcorr(Data3_HIVtotal_B,type="spearman") #Correlation between columns
+mat_corrHIVtotal_B <- res_corrHIVtotal_B$r
+pval_corrHIVtotal_B <- res_corrHIVtotal_B$P
+
+#Select all the correlations with HIVtotal_Bitude
+df_HIVtotal_B <- data.frame(mat_corrHIVtotal_B[nrow(mat_corrHIVtotal_B),], pval_corrHIVtotal_B[nrow(pval_corrHIVtotal_B),])
+
+df_HIVtotal_B$Name <- c(rownames(df_HIVtotal_B))
+df_HIVtotal_B$class <- "FC_HIVtotalB"
+colnames(df_HIVtotal_B) <- c( "Rho", "pval", "Name","clinical_param")
+# Eliminate correlation of HIVtotal_Bitude with HIVtotal_Bitude, only correlations of CpG with HIVtotal_Bitude now
+df_HIVtotal_B <- df_HIVtotal_B[-nrow(df_HIVtotal_B),]
+df_HIVtotal_B$qvalue <- p.adjust(df_HIVtotal_B$pval, method = "fdr")
+df_HIVtotal_B <- df_HIVtotal_B[order(abs(df_HIVtotal_B$Rho), decreasing = TRUE ),] # Decreasing rho order
+
+cor.test(as.numeric(Data3[,"cg13440882.APOBEC3G"]), cl_params$BHIVtotal_FCw1.w0, method = "spearman") # Rho-0.6395604 , p = -0.016
+
+df_HIVtotal_B.sig <- subset(df_HIVtotal_B, df_HIVtotal_B$pval < 0.05 & abs(df_HIVtotal_B$Rho) > 0.6)
+
+library(corrplot)
+res_corrFCHIVtotal_B <- rcorr(Data3_HIVtotal_B[,c(rownames(df_HIVtotal_B.sig), "FC_HIVtotalB")],type="spearman") #Correlation between columns
+
+corrplot(res_corrFCHIVtotal_B$r, type = "upper", p.mat = res_corrFCHIVtotal_B$P, sig.level = 0.05, insig = "blank",
+         tl.col = "black", tl.srt = 45, tl.cex = 0.6)
+
+```
+
+
+#Make a corrplot of all parameters. Using Fold change
+```{r}
+### 2.1. Correlation with   
+
+# Bind to Data 3 the values of HIVconsv_magnitude
+Data3_HIVconsv_Magn <- cbind(Data3, cbind(cl_params$MagnHIVconsv_FCw1w0,cbind(cl_params$MagnHIVtotal_FCw1w0, cbind(cl_params$BHIVconsv_FCw1.w0), cl_params$BHIVtotal_FCw1.w0)))
+
+colnames(Data3_HIVconsv_Magn) <- c(colnames(Data3), "Magnitude HIVconsv", "Magnitude HIVtotal", "Breadth HIVconsv", "Breadth HIVtotal")
+
+rownames(Data3_HIVconsv_Magn)
+id2 <- colnames(Data3_HIVconsv_Magn)
+Data3_HIVconsv_Magn <- apply(Data3_HIVconsv_Magn, 2, as.numeric)
+
+# Compute correlation bewteen CpGs among them and with HIVconsv_magnitude
+library(Hmisc)
+res_corrHIVconsv_Magn <- rcorr(Data3_HIVconsv_Magn,type="spearman") #Correlation between columns
+mat_corrHIVconsv_Magn <- res_corrHIVconsv_Magn$r
+pval_corrHIVconsv_Magn <- res_corrHIVconsv_Magn$P
+dim(mat_corrHIVconsv_Magn)
+
+#Select all the correlations with HIVconsv_magnitude
+df1 <- data.frame(mat_corrHIVconsv_Magn[5393,], pval_corrHIVconsv_Magn[5393,])
+df1$Name <- c(rownames(df1))
+df1$class <- "Magnitude-HIVconsv"
+colnames(df1) <- c( "Rho", "pval", "Name","clinical_param")
+
+df2 <- data.frame(mat_corrHIVconsv_Magn[5394,], pval_corrHIVconsv_Magn[5394,])
+df2$Name <- c(rownames(df2))
+df2$class <- "Magnitude-HIVtotal"
+colnames(df2) <- c( "Rho", "pval", "Name","clinical_param")
+
+
+df3 <- data.frame(mat_corrHIVconsv_Magn[5395,], pval_corrHIVconsv_Magn[5395,])
+df3$Name <- c(rownames(df3))
+df3$class <- "Breadth-HIVconsv"
+colnames(df3) <- c( "Rho", "pval", "Name","clinical_param")
+
+df4 <- data.frame(mat_corrHIVconsv_Magn[5396,], pval_corrHIVconsv_Magn[5396,])
+df4$Name <- c(rownames(df4))
+df4$class <- "Breadth-HIVtotal"
+colnames(df4) <- c( "Rho", "pval", "Name","clinical_param")
+
+library(tidyverse)
+df.all <- bind_rows(list(df1,df2,df3,df4))
+# Eliminate correlation of HIVconsv_magnitude with HIVconsv_magnitude, only correlations of CpG 
+dfall.sig <- subset(df.all, df.all$pval < 0.01 & abs(df.all$Rho) > 0.6)
+dfall.sig.o <- dfall.sig[order(abs(dfall.sig$Rho), decreasing = TRUE),]
+dfall.sig.o2 <- dfall.sig.o[ - grep("Magn|Bread", dfall.sig.o$Name),]
+dfall.sig.o2 <- dfall.sig.o2[1:80,]
+length(unique(dfall.sig.o2$Name))
+
+vector <- dfall.sig.o[ grep("Magn|Bread", dfall.sig.o$Name),]
+dfall.sig2 <- subset(dfall.sig, dfall.sig$Name %in% dfall.sig.o2$Name | dfall.sig$Name %in% vector$Name)
+
+length(unique(dfall.sig$Name))
+library(corrplot)
+
+#Remove Magnitude, Breadt... form df.all.names
+df.all.names <- dfall.sig2[-grep("Magn|Bread", dfall.sig2$Name),]
+
+
+Data3.all <- Data3_HIVconsv_Magn[,c(unique(df.all.names$Name), "Magnitude HIVconsv", "Magnitude HIVtotal", "Breadth HIVconsv", "Breadth HIVtotal" )]
+res_all <- rcorr(Data3.all, type = "spearman")
+
+corrplot(res_all$r, type = "upper", p.mat = res_all$P, sig.level = 0.05, insig = "blank",
+         tl.col = "black", tl.srt = 45, tl.cex = 0.55)
+
+corrplot(res_all$r, type = "upper", p.mat = res_all$P, sig.level = 0.05, insig = "blank",
+         tl.col = "black", tl.srt = 45, tl.cex = 0.55)
+
+
+
+```
+

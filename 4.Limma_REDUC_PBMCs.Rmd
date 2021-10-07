@@ -1,0 +1,203 @@
+---
+title: "Limma REDUC PBMCs"
+author: "Bruna Oriol"
+date: "November 11, 2020"
+output: html_document
+---
+
+```{r libraries, include = F, warning=F}
+
+library(limma)
+library(edgeR)
+library(sva)
+library(ggplot2)
+library(grid)
+library(gridExtra)
+library(knitr)
+library(RColorBrewer)
+library(mixOmics)
+library(dplyr)
+library(dendextend)
+library(gplots)
+library(VennDiagram)
+library(tidyr)
+library(DOSE)
+library(GO.db)
+library(org.Hs.eg.db)
+library(GSEABase)
+library(clusterProfiler)
+library(enrichplot)
+library(org.Hs.eg.db)
+library(AnnotationDbi)
+library(biomaRt)
+library(Mfuzz)
+library(ggrepel)
+library(reshape)
+library(ggpubr)
+
+```
+
+```{r}
+#Load Matrix of counts
+counts = read.table("~/../../Volumes/Sintítulo/IRSIHIV_05_06/COUNTS_genes_IRSIHIV_05",h=T,row.names=1)
+
+# Load information of individuals
+info = read.csv("~/../../Volumes/Sintítulo/IRSIHIV_05_06/CNAG_Info_REDUC.csv", row.names = 1)
+info <- info[colnames(counts),] #IRSIHIV05 are PBMCs
+info$namejoint <- paste(info$Individual, info$Timepoint, sep =".")
+info$CNAG <- rownames(info)
+rownames(info) <- info$namejoint
+colnames(counts) <- info$namejoint
+
+info <- info[-grep("Female",info$Sex),]
+counts <- counts[, -grep("1103",colnames(counts))]
+
+```
+
+
+```{r}
+y=DGEList(counts=counts) # object from a table of counts (rows=features, columns=samples), group indicator for each column, library size (optional) and a table of feature annotation (optional).
+
+isexpr <- rowSums(cpm(y) > 1) >= 5 # Compute counts per million and take those genes that have at least 1 count in 5 of the samples. 
+y=y[isexpr,keep.lib.size=FALSE]
+
+#Remove the only woman
+
+
+y=calcNormFactors(y) # Apply the scale normalization that by default is TMM. 
+Norm <- y$counts
+save(y, file = "../REDUC/PBMC/TMMcounts.RData")
+norm.counts <- y$counts
+write.table(norm.counts, file ="../REDUC/PBMC/TMMNormalizedCounts.txt")
+```
+
+
+#Voom transformation
+
+```{r}
+voom.counts1 <- voom(y, design = NULL)
+hist(voom.counts1$E)
+voom.counts <- voom.counts1$E
+write.table(voom.counts, file ="../REDUC/PBMC/voom_counts.txt")
+
+```
+
+```{r}
+
+MyResult.pca <- pca(t(voom.counts))     # 1 Run the method
+plotIndiv(MyResult.pca, group = info$Individual, centre = F, ellipse = F, legend = T)  # 2 Plot the samples
+plotIndiv(MyResult.pca, group = info$Sex, centre = F, ellipse = FALSE, legend = T)  # 2 Plot the samples
+plotIndiv(MyResult.pca, group = info$Age, centre = F, ellipse = FALSE, legend = T)  # 2 Plot the samples
+plotIndiv(MyResult.pca, group = info$CD4counts, centre = F, ellipse = FALSE, legend = T)  # 2 Plot the samples
+
+
+```
+
+```{r}
+patient=factor(info$Individual)
+length(levels(patient)) #14 patients
+
+Visit <- factor(info$Timepoint, levels = c("v1", "v9"))
+
+mod <- model.matrix(~0+Visit)
+colnames(mod)=levels(Visit)
+
+contr.matrix <- makeContrasts(
+  v9_v1 = v9 - v1,
+  levels=colnames(mod))
+
+
+# Since is a longitudinal study, we add information of the individual. 
+cor <- duplicateCorrelation(voom.counts,mod,block=patient)
+fit=lmFit(voom.counts,mod,block=patient, correlation=cor$consensus)
+
+
+## SIMPLE COMPARISON
+
+fit1=contrasts.fit(fit, contrasts=contr.matrix)
+fit1.2=eBayes(fit1)
+summary(decideTests(fit1.2))
+
+toptablePBMC <-  topTable(fit1.2, coef=1, sort="p", n=Inf, adjust = "BH",  resort.by = "p")
+write.table(toptablePBMC, file = "../REDUC/PBMC/tables/DEG_v9v1PBMC.txt", sep = "\t")
+toptable2PBMC <-  topTable(fit1.2, coef=1, sort="p", n=Inf, adjust = "BH",  resort.by = "p",p.value = 0.2)
+
+```
+
+
+#CD4 RMD
+```{r}
+rm(list = ls())
+dir.create("../REDUC/CD4")
+#Load Matrix of counts
+counts2 = read.table("~/../../Volumes/Sintítulo/IRSIHIV_05_06/COUNTS_genes_IRSIHIV_06",h=T,row.names=1)
+
+
+# Load information of individuals
+info2 = read.csv("~/../../Volumes/Sintítulo/IRSIHIV_05_06/CNAG_Info_REDUC.csv", row.names = 1)
+info2<- info2[colnames(counts2),] #IRSIHIV05 are PBMCs
+info2$namejoint <- paste(info2$Individual, info2$Timepoint, sep =".")
+info2$CNAG <- rownames(info2)
+rownames(info2) <- info2$namejoint
+colnames(counts2) <- info2$namejoint
+
+info2 <- info2[-grep("Female",info2$Sex),]
+counts2 <- counts2[, -grep("1103",colnames(counts2))]
+
+y2=DGEList(counts=counts2) # object from a table of counts (rows=features, columns=samples), group indicator for each column, library size (optional) and a table of feature annotation (optional).
+
+isexpr2 <- rowSums(cpm(y2) > 1) >= 5 # Compute counts per million and take those genes that have at least 1 count in 5 of the samples. 
+y2=y2[isexpr2,keep.lib.size=FALSE]
+
+
+y2=calcNormFactors(y2) # Apply the scale normalization that by default is TMM. 
+Norm2 <- y2$counts
+save(y2, file = "../REDUC/CD4/TMMcounts_CD4.RData")
+norm.counts2 <- y2$counts
+write.table(norm.counts2, file ="../REDUC/CD4/TMMNormalizedCounts.txt")
+
+voom.counts2 <- voom(y2, design = NULL)
+hist(voom.counts2$E)
+voom.countsCD4 <- voom.counts2$E
+write.table(voom.countsCD4, file ="../REDUC/CD4/voom_countsCD4.txt")
+
+
+MyResult.pcaCD4 <- pca(t(voom.countsCD4))     # 1 Run the method
+plotIndiv(MyResult.pcaCD4, group = info2$Individual, centre = F, ellipse = F, legend = T)  # 2 Plot the samples
+plotIndiv(MyResult.pcaCD4, group = info2$Sex, centre = F, ellipse = FALSE, legend = T)  # 2 Plot the samples
+plotIndiv(MyResult.pcaCD4, group = info2$Age, centre = F, ellipse = FALSE, legend = T)  # 2 Plot the samples
+plotIndiv(MyResult.pcaCD4, group = info2$CD4counts, centre = F, ellipse = FALSE, legend = T)  # 2 Plot the samples
+
+
+
+```
+```{r}
+patient2=factor(info2$Individual)
+length(levels(patient2)) #14 patients
+
+Visit2 <- factor(info2$Timepoint, levels = c("v1", "v9"))
+
+mod2 <- model.matrix(~0+Visit2)
+colnames(mod2)=levels(Visit2)
+
+contr.matrix2 <- makeContrasts(
+  v9_v1 = v9 - v1,
+  levels=colnames(mod2))
+
+
+# Since is a longitudinal study, we add information of the individual. 
+cor2 <- duplicateCorrelation(voom.countsCD4,mod2,block=patient2)
+fitCD4=lmFit(voom.countsCD4,mod2,block=patient2, correlation=cor2$consensus)
+
+
+## SIMPLE COMPARISON
+
+fitCD41=contrasts.fit(fitCD4, contrasts=contr.matrix2)
+fitCD41.2=eBayes(fitCD41)
+summary(decideTests(fitCD41.2))
+
+toptableCD4 <-  topTable(fitCD41.2, coef=1, sort="p", n=Inf, adjust = "BH",  resort.by = "p")
+toptable2CD4 <-  topTable(fitCD41.2, coef=1, sort="p", n=Inf, adjust = "BH",  resort.by = "p",p.value = 0.2)
+write.table(toptableCD4, file = "../REDUC/CD4/tables/DEG_v9v1CD4.txt")
+```
+

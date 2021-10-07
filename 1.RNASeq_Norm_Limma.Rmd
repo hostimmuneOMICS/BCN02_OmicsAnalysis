@@ -1,0 +1,754 @@
+---
+title: "RNASeq Analysis on BCN02 - Keystone Presentation"
+author: "Bruna Oriol"
+output:
+  html_document:
+    toc: true
+---
+
+
+# 1. INTRODUCTION
+
+This is the transcriptomics (RNA-Seq) analysis of the BCN02 kick (Romidepsin, RMD) and kill (MVA.HIVconsv) clinical trial. To evaluate the success of the study there is a MAP (Monitored Antiretroviral Pause) phase. The MAP is the pahse of monitored treatment interruption, individuals are mantained without cART for a maxmimum of 32w and they are ressumed to treatment if they show to consecutive viremia peaks > 2000 HIV RNA copies/mL.
+
+## 1.2. BCN02 Omics study Description
+
+**Timepoints Description**
+
+* w0: week 0 is the day of MVA.HIVconsv vaccination
+* w1: 1 week after 1st MVA.HIVconsv vaccination
+* w6: 1 week after the 3 doses of RMD adminsitration
+* w10: 1 week after 2nd MVA.HIVconsv vaccination (only for DNA Methylation Data)
+* MAP: Day of cART Ressumption
+* w24: 24 weeks after cART ressumption. 
+
+
+**Participants Description**
+
+From the 15 participants of the study 14 interrupt the treatment in the MAP:
+
+* A04, A12, A13, A14, A15, B05, B06, B10 and B14 already at 4w of MAP show VL > 2000 HIV RNA copies/ml.
+* A05, A09and B13 show VL < 2000 HIV RNA copies/ ml during the 32w of MAP.
+* A02 show < VL 2000 HIV RNA copies/ml until 8w of MAP.
+* B03 need to be excluded from the protocol (protocol violation at MAP phase). Possibility to use the information of this participant in previous timepoints.
+* B07 could not interrupt treatment (no MAP phase). It didn't fulfill the immune criteria.
+
+
+**Other participant information specific for omics studies**
+
+* A14 is prefered to be excluded for the omics studies since it's the only woman. 
+* Proposal to mantain B03 and B07 samples in all the timepoints excep for MAP and w24.
+* In samples A05 and A09 we don't have the timepoint w24.
+
+** Questions of the study **
+
+1.Profiles RNA-Seq along the time.
+
++ DEG between timepoints
++ Exploratory Data Analysis
++ Profiles based on the DEGs
++ Are these transcriptomics profiles different between individuals with Early/Late rebound?
+
+
+2.Methylation impact of kick and kill
+
+First analysis on DNA Methylation showed no major differences between the different timepoints but between individuals
+(Only with 450K array)
+
++ DNA Methylation profiles associated with Early
+
+
+# 2. TRANSCRIPTOMICS ANALYSIS - Data Normalization and Exploration
+
+##1. Data Pre-processing
+
+The RNA-Seq was done in CNAG. Ana Esteve was the person who did the QC of the reads, the alignment (using STAR software) and the reads quantification (using RSEM software). Finally, she retrieved the Count Matrix and normalized the data using TMM. Also, she did first analyses on DEG using limma + voom, she did some GEA and GSEA and also applied MFuzz to study expression profiles. 
+```{r libraries, include = F, warning=F}
+
+library(limma)
+library(edgeR)
+library(sva)
+library(ggplot2)
+library(grid)
+library(gridExtra)
+library(knitr)
+library(RColorBrewer)
+library(mixOmics)
+library(dplyr)
+library(dendextend)
+library(gplots)
+library(VennDiagram)
+library(tidyr)
+library(DOSE)
+library(GO.db)
+library(org.Hs.eg.db)
+library(GSEABase)
+library(clusterProfiler)
+library(enrichplot)
+library(org.Hs.eg.db)
+library(AnnotationDbi)
+library(biomaRt)
+library(Mfuzz)
+library(ggrepel)
+library(reshape)
+library(ggpubr)
+
+```
+
+```{r load datasets}
+
+#Load Matrix of counts
+counts = read.table("../RNASeq/DataCNAG/raw_counts/COUNTS_genes_IRSIHIV_02",h=T,row.names=1)
+
+# Load information of individuals
+info = read.table("../RNASeq/DataCNAG/Sample_INFO.TXT",h=T, row.names=1)
+
+# We want the colnames of counts and rownames of info to be the same: A02.w1 (example)
+
+#Since colnames counts is the barcode of CNAG, look that we have data in the same order.
+df <- data.frame(colnames(counts), info$BARCODE_CNAG)
+
+rownames(info) <- paste(info$PATIENT_ID, info$WEEK, sep = ".") # Make the formula patient.timepoint
+colnames(counts) <- rownames(info) # put the same name in colnames. 
+
+```
+
+####MDS Raw data
+```{r}
+d <- dist(t(log2(counts+1))) # euclidean distances between the rows
+fit <- cmdscale(d,eig=TRUE, k=4) # k is the number of dim
+
+df_fit <- data.frame(fit$points) 
+df_fit$Name <- rownames(df_fit)
+#df_fit$Name <- sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )
+
+
+#Define plot theme
+theme <- theme(panel.background = element_blank(),
+             panel.border=element_rect(fill=NA),
+             panel.grid.major = element_blank(),
+             panel.grid.minor = element_blank(),
+             strip.background=element_blank(),
+             axis.text.x=element_text(colour="black"),
+             axis.text.y=element_text(colour="black"),
+             axis.ticks=element_line(colour="black"),
+             plot.margin=unit(c(1,1,1,1),"line"))
+
+#According week
+
+df_fit$groups <- info$WEEK
+df_fit$groups <- factor(df_fit$groups, levels = c("w0", "w1", "w6", "MAP", "w24"))
+
+p<-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= Name))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= Name))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= Name ))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+
+
+```
+
+
+
+###1.2. Data Normalization
+
+We remove the only woman of the study before the normalizing step. The normalization method TMM (Trimmed Mean of M values) accounts for sequencing depth, RNA composition and gene length. This normalization function is from the R package edge R
+
+```{r Data Normalization}
+
+info <- subset(info, info$PATIENT_ID != "A14") # Remove from the paient info the only woman of the study
+info$PATIENT_ID <- factor(info$PATIENT_ID, levels = unique(info$PATIENT_ID), labels = unique(info$PATIENT_ID)) #Patient is a factor, remove the only woman from the levels. 
+
+counts = counts[, -grep("A14", colnames(counts))] # Remove the only woman of the study
+
+y=DGEList(counts=counts) # object from a table of counts (rows=features, columns=samples), group indicator for each column, library size (optional) and a table of feature annotation (optional).
+
+isexpr <- rowSums(cpm(y) > 1) >= 5 # Compute counts per million and take those genes that have at least 1 count in 5 of the samples. 
+y=y[isexpr,keep.lib.size=FALSE]
+
+
+y=calcNormFactors(y) # Apply the scale normalization that by default is TMM. 
+save(y, file = "../RNASeq/RData/TMMcounts.RData")
+```
+
+Here we will mantain individuals B03 and B07 since we only focus in w0, w1 and w6.
+```{r, REMOVE B03 MAP and w24}
+
+# Remove samples MAP and w24
+y2 = y[, -grep("B03.MAP|B03.w24", colnames(y))]
+
+norm.counts <- y2$counts
+write.table(norm.counts, file ="../RNASeq/TMMNormalizedCounts.txt")
+info.2 <- info[-grep("B03.MAP|B03.w24", rownames(info)),]
+
+```
+
+#Voom transformation
+```{r}
+
+voom.counts1 <- voom(y2, design = NULL)
+hist(voom.counts1$E)
+voom.counts <- voom.counts1$E
+write.table(voom.counts, file ="../RNASeq/Log2NormalizedCounts.txt")
+
+save(y2,info.2, voom.counts, file = "../RNASeq/RData/DataRNA_filterIND.RData")
+
+```
+
+
+####1.2.1. Exploratory Data Analysis
+
+
+
+*Principal Component Analyses*
+
+PCA on log2 normalized data
+
+```{r, PCA log2 Normalized Data}
+
+MyResult.pca <- pca(t(voom.counts))     # 1 Run the method
+plotIndiv(MyResult.pca, group = info.2$WEEK, centre = F, ellipse = FALSE, legend = T)  # 2 Plot the samples
+plotIndiv(MyResult.pca, group = info.2$REBOUND, centre = F, ellipse = FALSE, legend = T)  # 2 Plot the samples
+plotIndiv(MyResult.pca, group = info.2$HOSPITAL, centre = F, ellipse = FALSE, legend = T)  # 2 Plot the samples
+
+```
+
+
+*timepoints before MAP alone*
+
+```{r}
+
+counts.befMAP <- voom.counts[, grep("w0|w1|w6", colnames(voom.counts))]
+info.befMAP <- subset(info.2, info.2$WEEK == "w0"|info.2$WEEK == "w1"|info.2$WEEK == "w6")
+
+d <- dist(t(counts.befMAP)) # euclidean distances between the rows
+fit <- cmdscale(d,eig=TRUE, k=4) # k is the number of dim
+
+df_fit <- data.frame(fit$points) 
+df_fit$Name <- rownames(df_fit)
+#df_fit$Name <- sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )
+
+
+
+#According week
+
+df_fit$groups <- info.befMAP$WEEK
+df_fit$groups <- factor(df_fit$groups, levels = c("w0", "w1", "w6"))
+
+#Define plot theme
+theme <- theme(panel.background = element_blank(),
+             panel.border=element_rect(fill=NA),
+             panel.grid.major = element_blank(),
+             panel.grid.minor = element_blank(),
+             strip.background=element_blank(),
+             axis.text.x=element_text(colour="black"),
+             axis.text.y=element_text(colour="black"),
+             axis.ticks=element_line(colour="black"),
+             plot.margin=unit(c(1,1,1,1),"line"))
+
+
+
+p<-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= Name))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= Name))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= Name ))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+
+
+
+
+#According rebound
+unique(df_fit$Name)
+groups <- rownames(df_fit)
+Early <- grep("A12|A14|B06|A04|A13|A15|B05|B10|B14", groups)
+Late <- grep("A02|A05|A09|B13", groups)
+B03 <- grep("B03", groups)
+B07 <- grep("B07", groups)
+
+
+groups[Early] <- "Early"
+groups[Late] <- "Late"
+groups[B03] <- "B03"
+groups[B07] <- "B07"
+
+
+df_fit$groups <- groups
+df_fit$groups <- factor(df_fit$groups, levels = c("Early", "Late", "B03", "B07"))
+
+
+p <- ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p + geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+
+p <- ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p + geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+
+p <- ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p + geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+
+
+
+#According Hospital
+df_fit$groups <- info.befMAP$HOSPITAL
+
+
+
+p <- ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p + geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+
+p <- ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p + geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+
+p <- ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p + geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+
+
+```
+
+#### MDS QN per weeks (Evaluate Reb)
+```{r}
+
+info.2$Rebound <- factor(info.2$REBOUND, levels = c("Early", "Late", "Out"))
+info.2[which(info.2$PATIENT_ID == "B03"),]$Rebound <- "Out"
+info.2[which(info.2$PATIENT_ID == "B07"),]$Rebound <- "Out"
+
+
+counts = voom.counts
+
+counts.w0 <- counts[, grep("w0", colnames(counts))]
+counts.w1 <- counts[, grep("w1$", colnames(counts))]
+counts.w6 <- counts[, grep("w6", colnames(counts))]
+counts.MAP<- counts[, grep("MAP", colnames(counts))]
+counts.w24<- counts[, grep("w24", colnames(counts))]
+
+info.2.w0 <- info.2[grep("w0", info.2$WEEK), ]
+info.2.w1 <- info.2[grep("w1$", info.2$WEEK), ]
+info.2.w6 <- info.2[grep("w6", info.2$WEEK), ]
+info.2.MAP <- info.2[grep("MAP", info.2$WEEK), ]
+info.2.w24 <- info.2[grep("w24", info.2$WEEK), ]
+
+#Define plot theme
+theme <- theme(panel.background = element_blank(),
+             panel.border=element_rect(fill=NA),
+             panel.grid.major = element_blank(),
+             panel.grid.minor = element_blank(),
+             strip.background=element_blank(),
+             axis.text.x=element_text(colour="black"),
+             axis.text.y=element_text(colour="black"),
+             axis.ticks=element_line(colour="black"),
+             plot.margin=unit(c(1,1,1,1),"line"))
+
+
+#w0
+
+d <- dist(t(counts.w0)) # euclidean distances between the rows
+fit <- cmdscale(d,eig=TRUE, k=4) # k is the number of dim
+
+df_fit <- data.frame(fit$points) 
+df_fit$Name <- sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )
+df_fit$groups <- info.2.w0$Rebound
+
+p<-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+p + stat_ellipse() + ggtitle("w0")
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+p + stat_ellipse() + ggtitle("w0")
+
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+p + stat_ellipse() + ggtitle("w0")
+
+
+#w1
+
+d <- dist(t(counts.w1)) # euclidean distances between the rows
+fit <- cmdscale(d,eig=TRUE, k=4) # k is the number of dim
+
+df_fit <- data.frame(fit$points) 
+df_fit$Name <- sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )
+df_fit$groups <- info.2.w1$Rebound
+
+p<-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+p + stat_ellipse() + ggtitle("w1")
+
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+p + stat_ellipse() + ggtitle("w1")
+
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+p + stat_ellipse() + ggtitle("w1")
+
+
+#w6
+
+d <- dist(t(counts.w6)) # euclidean distances between the rows
+fit <- cmdscale(d,eig=TRUE, k=4) # k is the number of dim
+
+df_fit <- data.frame(fit$points) 
+df_fit$Name <- sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )
+df_fit$groups <- info.2.w6$Rebound
+
+p<-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+p + stat_ellipse() + ggtitle("w6")
+
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+p + stat_ellipse() + ggtitle("w6")
+
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+p + stat_ellipse() + ggtitle("w6")
+
+
+#MAP
+
+d <- dist(t(counts.MAP)) # euclidean distances between the rows
+fit <- cmdscale(d,eig=TRUE, k=4) # k is the number of dim
+
+df_fit <- data.frame(fit$points) 
+df_fit$Name <- sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )
+df_fit$groups <- info.2.MAP$Rebound
+
+p<-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+p + stat_ellipse() + ggtitle("MAP")
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+p + stat_ellipse() + ggtitle("MAP")
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+p + stat_ellipse() + ggtitle("MAP")
+
+
+#w24
+
+d <- dist(t(counts.w24)) # euclidean distances between the rows
+fit <- cmdscale(d,eig=TRUE, k=4) # k is the number of dim
+
+df_fit <- data.frame(fit$points) 
+df_fit$Name <- sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )
+df_fit$groups <- info.2.w24$Rebound
+
+p<-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+p + stat_ellipse() + ggtitle("w24")
+
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+p + stat_ellipse() + ggtitle("w24")
+
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+p + stat_ellipse() + ggtitle("w24")
+
+```
+
+
+# 3. TRANSCRIPTOMICS ANALYSIS - Combat
+We observe that PC1 and PC2 are more related to a batch effect associated with hospital laboratory in which samples were processed. Need to correct. For that we'll use Combat in sva R pkg. In the model for correction we will not add the variable of interest (Week or Rb) to avoid this bias.
+
+```{r}
+rm(list = ls())
+load("../RNASeq/RData/DataRNA_filterIND.RData")
+
+patient=factor(info.2$PATIENT_ID)
+length(levels(patient)) #14 patients
+
+
+# Combat Correction
+
+
+# Make the design Combat --> Input for ComBat function
+designCombat = model.matrix(~ 1, info.2)
+
+# Recalculate the new Beta values correcting by batch (Scan Date) - Only for data visualization purposes
+voom.combat.counts = ComBat(voom.counts, batch = info.2$HOSPITAL , 
+                      mod = designCombat, par.prior = TRUE, prior.plots= TRUE) 
+
+save(voom.combat.counts, file = "../RNASeq/RData/voom_counts_combat.RData")
+write.table(voom.combat.counts, file = "../RNASeq/VoomCountsCombat.txt" )
+
+
+```
+
+## 3.1. Exploratory analysis combat results
+*Principal Component Analyses*
+
+PCA on data after combat
+
+```{r}
+
+MyResult.pca <- pca(t(voom.combat.counts))     # 1 Run the method
+plotIndiv(MyResult.pca, group = info.2$WEEK, centre = F, ellipse = FALSE, legend = T)  # 2 Plot the samples
+plotIndiv(MyResult.pca, group = info.2$REBOUND, centre = F, ellipse = FALSE, legend = T)  # 2 Plot the samples
+plotIndiv(MyResult.pca, group = info.2$HOSPITAL, centre = F, ellipse = FALSE, legend = T)  # 2 Plot the samples
+
+
+```
+
+#Global
+*timepoints before MAP alone*
+
+```{r}
+
+counts.befMAP <- voom.combat.counts[, grep("w0|w1|w6", colnames(voom.combat.counts))]
+info.befMAP <- subset(info.2, info.2$WEEK == "w0"|info.2$WEEK == "w1"|info.2$WEEK == "w6")
+
+
+d <- dist(t(counts.befMAP)) # euclidean distances between the rows
+fit <- cmdscale(d,eig=TRUE, k=4) # k is the number of dim
+
+df_fit <- data.frame(fit$points) 
+df_fit$Name <-rownames(df_fit)
+#df_fit$Name <- sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] ) #Only A02, A05 etc. without week 
+
+
+#Week
+
+df_fit$groups <- info.befMAP$WEEK
+
+#Define plot theme
+theme <- theme(panel.background = element_blank(),
+             panel.border=element_rect(fill=NA),
+             panel.grid.major = element_blank(),
+             panel.grid.minor = element_blank(),
+             strip.background=element_blank(),
+             axis.text.x=element_text(colour="black"),
+             axis.text.y=element_text(colour="black"),
+             axis.ticks=element_line(colour="black"),
+             plot.margin=unit(c(1,1,1,1),"line"))
+
+p<-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= Name))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= Name))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= Name ))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+
+
+
+
+#According rebound
+unique(df_fit$Name)
+groups <- rownames(df_fit)
+Early <- grep("A12|A14|B06|A04|A13|A15|B05|B10|B14", groups)
+Late <- grep("A02|A05|A09|B13", groups)
+B03 <- grep("B03", groups)
+B07 <- grep("B07", groups)
+
+
+groups[Early] <- "Early"
+groups[Late] <- "Late"
+groups[B03] <- "B03"
+groups[B07] <- "B07"
+
+
+df_fit$groups <- groups
+df_fit$groups <- factor(df_fit$groups, levels = c("Early", "Late", "B03", "B07"))
+
+
+
+p <- ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p + geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+
+p <- ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p + geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+
+p <- ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p + geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+
+#According Hospital
+
+df_fit$groups  <- info.befMAP$HOSPITAL
+
+p <- ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p + geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+
+p <- ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p + geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+
+p <- ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p + geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+
+```
+
+# 4. TRANSCRIPTOMICS ANALYSIS - Differential Expression Analysis
+
+The first endpoint is try to identify the molecular mechanisms involved in the different timepoints. 
+
+It's necessary to apply the voom function to apply limma in RNA-Seq: Transform count data to log2-counts per million (logCPM) estimate the mean-variance relationship use this to compute appropriate observation-level weights. The data are then ready for linear modelling. 
+
+We include a correlation structure between the individuals: duplicateCorrelation
+
+#### 4.1. Design - Week
+
+```{r, limma, warning = FALSE}
+rm(list = ls())
+load("../RNASeq/RData/DataRNA_filterIND.RData")
+
+PhenoWBCest <- read.table("../Meth/Analysis450K/PhenoWBCest.txt")
+PhenoWBCestEPIC <- read.table("../Meth/AnalysisEPIC/PhenoWBCest.txt") #Add age on Pheno
+
+Pheno1 <- PhenoWBCest[,-16]
+
+Pheno.both <- rbind(Pheno1, PhenoWBCestEPIC)
+
+Pheno2 <-  Pheno.both[-grep("A14|w10|preCART|B03.MAP|B03.w24",rownames(Pheno.both)),] # remove the woman
+dim(Pheno2)
+dim(info.2)
+
+patient=factor(info.2$PATIENT_ID)
+length(levels(patient)) #14 patients
+
+Week <- factor(info.2$WEEK, levels = c("w0", "w1", "w6", "MAP", "w24"))
+Hospital <- factor(info.2$HOSPITAL)
+setdiff(rownames(Pheno2), rownames(info.2))
+
+
+mod1 <- model.matrix(~0+Week + Hospital)
+colnames(mod1)= c(levels(Week), "Hospital")
+
+
+contr.matrix1 <- makeContrasts(
+  
+  w24vsMAP=w24-MAP,
+  w24vsw6=w24-w6,
+  w24vsw1=w24-w1,
+  MAPvsw6=MAP-w6,
+  MAPvsw1=MAP-w1,
+  w6vsw1=w6-w1,
+  w24vsw0=w24-w0,
+  MAPvsw0=MAP-w0,
+  w6vsw0=w6-w0,
+  w1vsw0=w1-w0,
+  
+  
+  levels=colnames(mod1))
+
+
+
+#model
+# Since is a longitudinal study, we add information of the individual. 
+cor1 <- duplicateCorrelation(voom.counts,mod1,block=patient)
+fit=lmFit(voom.counts,mod1,block=patient, correlation=cor1$consensus)
+
+
+## SIMPLE COMPARISON
+
+fit1=contrasts.fit(fit, contrasts=contr.matrix1)
+fit1.2=eBayes(fit1)
+summary(decideTests(fit1.2))
+
+dir.create("../RNASeq/DEGweeks")
+dir.create("../RNASeq/DEGweeks/LimmaBlock")
+dir.create("../RNASeq/DEGweeks/LimmaBlock/adjpval")
+
+write.table(summary(decideTests(fit1.2)),file = "../RNASeq/DEGweeks/SummaryRes.txt", sep = "\t")
+
+
+for (i in  colnames(fit1.2$coefficients)){
+  toptable <-  topTable(fit1.2, coef=i, sort="p", n=Inf, adjust = "BH",  resort.by = "p")
+  write.table( toptable, paste(paste("../RNASeq/DEGweeks/LimmaBlock", i),".txt",sep=""),quote=F)
+  toptable1 <-  topTable(fit1.2, coef=i, sort="p", n=Inf, adjust = "BH",  resort.by = "p", p.value = 0.2)
+  write.table( toptable1, paste(paste("../RNASeq/DEGweeks/LimmaBlock/qval", i),".txt",sep=""),quote=F)
+}
+
+```
+
+
+##2.5. Identify DEGs with Limma - Rebound (also in individual groups)
+For this part we need to remove B03 and B07
+
+```{r}
+rm(list = ls())
+
+load("../RNASeq/RData/DataRNA_filterIND.RData")
+counts  <- voom.counts
+
+counts <- counts[,-grep("A14|B07|B03",colnames(counts))]
+info <- info.2[-grep("A14|B07|B03",rownames(info.2 )),]
+
+
+patient=factor(info$PATIENT_ID)
+length(levels(patient)) #12 patients
+
+PhenoWBCest <- read.table("../Meth/Analysis450K/PhenoWBCest.txt")
+PhenoWBCestEPIC <- read.table("../Meth/AnalysisEPIC/PhenoWBCest.txt") #Add age on Pheno
+
+Pheno1 <- PhenoWBCest[,-16]
+
+Pheno.both <- rbind(Pheno1, PhenoWBCestEPIC)
+
+Pheno2 <-  Pheno.both[-grep("A14|w10|preCART|B03|B07",rownames(Pheno.both)),] # remove the woman
+
+
+# Limma Model
+Week_Rebound <- factor(paste(info$WEEK, info$REBOUND, sep ="_"), levels = c("w0_Late", "w1_Late","w6_Late", 
+                                                                            "MAP_Late", "w24_Late","w0_Early",
+                                                                            "w1_Early", "w6_Early", "MAP_Early","w24_Early"))
+
+
+mod1 <- model.matrix(~0+Week_Rebound)
+colnames(mod1)=levels(Week_Rebound)
+
+
+contr.matrix_rb1 <- makeContrasts(
+  
+  w24_EarlyvsLate = w24_Early-w24_Late,
+  MAP_EarlyvsLate = MAP_Early-MAP_Late,
+  w6_EarlyvsLate =  w6_Early-w6_Late,
+  w1_EarlyvsLate =  w1_Early-w1_Late,
+  w0_EarlyvsLate =  w0_Early-w0_Late,
+  
+  
+  EarlyvsLate = ((w0_Early+w1_Early+w6_Early+MAP_Early+w24_Early)/5) - ((w0_Late+w1_Late+w6_Late+MAP_Early+w24_Early)/5),
+
+  levels=colnames(mod1))
+
+
+
+## SIMPLE COMPARISON
+fit=lmFit(counts,mod1)
+
+fit1=contrasts.fit(fit, contrasts=contr.matrix_rb1)
+fit1.2=eBayes(fit1)
+summary(decideTests(fit1.2))
+
+dir.create("../RNASeq/DEGRb_today")
+dir.create("../RNASeq/DEGRb_today/LimmaBlock")
+dir.create("../RNASeq/DEGRb_today/LimmaBlock/adjpval")
+
+# All genes
+write.table(summary(decideTests(fit1.2)),file = "../RNASeq/DEGRb_today/SummaryRes.txt", sep = "\t")
+
+
+for (i in  colnames(fit1.2$coefficients)){
+  toptable <-  topTable(fit1.2, coef=i, sort="p", n=Inf, adjust = "BH",  resort.by = "p")
+  write.table( toptable, paste(paste("../RNASeq/DEGRb_today/LimmaBlock", i),".txt",sep=""),quote=F)
+  toptable1 <-  topTable(fit1.2, coef=i, sort="p", n=Inf, adjust = "BH",  resort.by = "p", p.value = 0.2)
+  write.table( toptable1, paste(paste("../RNASeq/DEGRb_today/LimmaBlock/adjpval/", i),".txt",sep=""),quote=F)
+}
+
+```
+

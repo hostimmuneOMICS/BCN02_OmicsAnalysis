@@ -1,0 +1,1034 @@
+---
+title: "Methylation"
+author: "Bruna Oriol"
+date: "6/4/2020"
+output: html_document
+---
+
+
+
+# 1. Study Introduction
+
+This is the transcriptomics (RNA-Seq) analysis of the BCN02 kick (Romidepsin, RMD) and kill (MVA.HIVconsv) clinical trial. To evaluate the success of the study there is a MAP (Monitored Antiretroviral Pause) phase. The MAP is the pahse of monitored treatment interruption, individuals are mantained without cART for a maxmimum of 32w and they are ressumed to treatment if they show to consecutive viremia peaks > 2000 HIV RNA copies/mL. 
+
+## 1.2. BCN02 Omics study Description
+
+**Timepoints Description**
+
+* w0: week 0 is the day of MVA.HIVconsv vaccination
+* w1: 1 week after 1st MVA.HIVconsv vaccination
+* w6: 1 week after the 3 doses of RMD adminsitration
+* w10: 1 week after 2nd MVA.HIVconsv vaccination (only for DNA Methylation Data)
+* MAP: Day of cART Ressumption
+* w24: 24 weeks after cART ressumption. 
+
+
+**Participants Description**
+
+From the 15 participants of the study 14 interrupt the treatment in the MAP:
+
+* A04, A12, A13, A14, A15, B05, B06, B10 and B14 already at 4w of MAP show VL > 2000 HIV RNA copies/ml.
+
+* A05, A09 and B13 show VL < 2000 HIV RNA copies/ ml during the 32w of MAP.
+
+* A02 show < VL 2000 HIV RNA copies/ml until 8w of MAP.
+
+* B03 need to be excluded from the protocol (protocol violation at MAP phase). Possibility to use the information of this participant in previous time points.
+
+* B07 could not interrupt treatment (no MAP phase). It didn't fulfill the immune criteria.
+
+
+**Other participant information specific for omics studies**
+
+* A14 is preferred to be excluded for the omics studies since it's the only woman. 
+
+* Proposal to mantain B03 and B07 samples in all the timepoints except for MAP and w24.B03 and B07 are also excluded in Early vs Late rebound studies. 
+
+* In samples A05 and A09 we don't have the timepoint w24.
+
+** DNA Methylation part **
+In this script we will evaluate DNA Methylation at timepoints previous to MAP and evaluated with 450K array. So, it includes: w0, w1 w6 and w10. In all the timepoints we will make comparisons between timepoints and in each timepoint, comparison EvsF rebound.
+
+# 2. Methylation Analysis of 450K Array
+```{r, message=FALSE, warning=FALSE}
+rm(list=ls())
+
+#Need to load libraries
+library(minfi)
+library(minfiData)
+library(ChAMP)
+library(reshape)
+library(ggplot2)
+library(lumi)
+library(limma)
+library(dplyr)
+library(dendextend)
+library(gplots)
+library(RColorBrewer)
+library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+library(gtools)
+library(sva)
+library(MASS)
+library(ggrepel)
+library(mixOmics)
+library(FactoMineR)
+library(factoextra)
+
+```
+
+## 2.1.Read 450K Data 
+```{r, eval = FALSE}
+# Annotation
+ann450k<-getAnnotation(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+ann450k<-as.data.frame(ann450k)
+write.table(ann450k, file = "../Meth/Analysis450K/annot450.txt" )
+```
+
+
+Since all the individuals are men we'll not remove XY chromosomes
+
+```{r, eval=FALSE}
+#Read 450K microarray intensity files
+# myLoad450 <- champ.load(directory = "../../BCN02_Omics_paper/Meth/450K", methValue = "B", method = "minfi", filterXY = FALSE)
+# RGSet450K <- myLoad450$rgSet # Contains the raw intensities in the green and red channels.
+# MSet450K <- myLoad450$mset # Contains the methylated and unmethylated signals
+# PData450k <- myLoad450$pd # Contains the arraZy associated metadata
+```
+
+```{r}
+#Save the different objects.
+
+#save(myLoad450, RGSet450K, MSet450K, PData450k, file = "../Meth/Analysis450K/RData/myLoad.RData")
+
+load("../Meth/Analysis450K/RData/myLoad.RData")
+```
+
+
+
+```{r}
+pd <- pData(RGSet450K) # Get the array associated metadata and convert it to data frame. 
+Pheno <- data.frame(pd) 
+dim(Pheno) #60 x 10 : 10 columns with array metadata. This is information from the sample sheet. 
+
+### QC Report with Minfi
+qcReport(RGSet450K, pdf = "../QC_450K.pdf")
+
+### Read Phenotype Data: this is information we provide. 
+
+PhenoInfo450 <- read.csv(file = "../Meth/Info/targets450.csv") 
+
+#Colnames:
+  ##Sample name:The name of the DNA Sample (1,2,3, etc.)
+  ## Ind_time: Individual + week ifnormation
+  ## Individual: There are 15 individuals A02, etc.
+  ## Week: Different timepoints: w0, w1, w6, w10.
+  ## Rebound: Early/Late rebound
+  ## Hospital: HC/HUGTIP
+  ## Age: the age of individuals
+
+```
+
+
+##2.2. Get Raw Beta values for methylation
+
+```{r}
+
+#Make sure there is the same order in both data frames
+int <- intersect(Pheno$Sample_Name, PhenoInfo450$Sample_Name)
+PhenoInfo450 <- PhenoInfo450[match(int, PhenoInfo450$Sample_Name),]
+
+#Change rownames: put it as A02.w0, etc.
+rownames(PhenoInfo450) <- paste(as.character(PhenoInfo450$Individual), as.character(PhenoInfo450$Week), sep = ".")
+rownames(Pheno) <- rownames(PhenoInfo450)
+
+Pheno <- cbind(Pheno, PhenoInfo450[,c(2,3,4,5,6,7)])
+write.table(Pheno, file = "../Meth/Info/Pheno450.txt", sep = "\t", quote = F)
+
+#Get Betas
+RGSet.names <- data.frame(colnames(RGSet450K), Pheno$Sample_Name )
+colnames(RGSet450K) <- rownames(Pheno)
+df <- data.frame(colnames(RGSet450K), rownames(Pheno)) # verify same order
+
+##Raw Betas
+Beta.raw <- getBeta(RGSet450K)
+colnames(Beta.raw)
+write.table(Beta.raw, file = "../Meth/Analysis450K/RawBeta.txt")
+```
+
+
+
+### 2.2.1 Exploratory Data Analysis - Raw Data
+A14 the only woman of the study appears as an outlier. 
+```{r}
+rm(list = ls())
+
+Beta.raw <- read.table("../Meth/Analysis450K/RawBeta.txt")
+Pheno <- read.delim("../Meth/Analysis450K/Pheno450.txt")
+
+#MDS Raw Data
+d <- dist(t(Beta.raw)) # euclidean distances between the rows (samples)
+fit <- cmdscale(d,eig=TRUE, k=4) # k is the number of dim
+
+df_fit <- data.frame(fit$points) 
+df_fit$Name <- sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )
+
+
+#Make groups according week
+
+df_fit$groups <- Pheno$Week
+
+#Define plot theme
+theme_MDS <- theme(panel.background = element_blank(),
+             panel.border=element_rect(fill=NA),
+             panel.grid.major = element_blank(),
+             panel.grid.minor = element_blank(),
+             strip.background=element_blank(),
+             axis.text.x=element_text(colour="black"),
+             axis.text.y=element_text(colour="black"),
+             axis.ticks=element_line(colour="black"),
+             plot.margin=unit(c(1,1,1,1),"line"))
+
+
+
+p<-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= Name))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS  + xlab("Coordinate 1") + ylab("Coordinate 2")
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= Name))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS + xlab("Coordinate 1") + ylab("Coordinate 3")
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS + xlab("Coordinate 2") + ylab("Coordinate 3")
+
+
+
+#According rebound
+unique(df_fit$Name)
+groups <- rownames(df_fit)
+Early <- grep("A12|A14|B06|A04|A13|A15|B05|B10|B14", groups)
+Late <- grep("A02|A05|A09|B13", groups)
+B03 <- grep("B03", groups)
+B07 <- grep("B07", groups)
+
+
+groups[Early] <- "Early"
+groups[Late] <- "Late"
+groups[B03] <- "B03"
+groups[B07] <- "B07"
+
+
+df_fit$groups <- groups
+df_fit$groups <- factor(df_fit$groups, levels = c("Early", "Late", "B03", "B07"))
+
+
+
+
+p <-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme_MDS + xlab("Coordinate 1") + ylab("Coordinate 2")
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS + xlab("Coordinate 1") + ylab("Coordinate 3")
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS + xlab("Coordinate 2") + ylab("Coordinate 3")
+
+
+
+#Hospital
+df_fit$groups <- Pheno$Hospital
+
+p <-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme_MDS + xlab("Coordinate 1") + ylab("Coordinate 2")
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS + xlab("Coordinate 1") + ylab("Coordinate 3")
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS + xlab("Coordinate 2") + ylab("Coordinate 3")
+```
+
+
+
+```{r}
+
+# Remove the Only woman of the study and make the plots again:
+
+Beta.raw2 <- Beta.raw[, -grep("A14",colnames(Beta.raw))]
+Pheno2 <- Pheno[-grep("A14",rownames(Pheno)),]
+
+
+#MDS Raw Data
+
+d <- dist(t(Beta.raw2)) # euclidean distances between the rows
+fit <- cmdscale(d,eig=TRUE, k=4) # k is the number of dim
+
+df_fit <- data.frame(fit$points) 
+df_fit$Name <- sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )
+
+
+#According week
+groups <- rownames(df_fit)
+w0 <- grep("w0", groups)
+w1 <- grep("w1", groups)
+w6 <- grep("w6", groups)
+w10 <- grep("w10", groups)
+
+groups[w0] <- "w0"
+groups[w1] <- "w1"
+groups[w6] <- "w6"
+groups[w10] <- "w10"
+
+
+df_fit$groups <- groups
+df_fit$groups <- factor(df_fit$groups, levels = c("w0", "w1", "w6", "MAP", "w24"))
+
+
+p<-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= Name))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS  + xlab("Coordinate 1") + ylab("Coordinate 2")
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= Name))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS + xlab("Coordinate 1") + ylab("Coordinate 3")
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS + xlab("Coordinate 2") + ylab("Coordinate 3")
+
+
+
+#According rebound
+unique(df_fit$Name)
+groups <- rownames(df_fit)
+Early <- grep("A12|A14|B06|A04|A13|A15|B05|B10|B14", groups)
+Late <- grep("A02|A05|A09|B13", groups)
+B07 <-  grep("B07", groups)
+B03 <- grep("B03", groups)
+
+
+groups[Early] <- "Early"
+groups[Late] <- "Late"
+groups[B03] <- "B03"
+groups[B07] <- "B07"
+
+
+df_fit$groups <- groups
+df_fit$groups <- factor(df_fit$groups, levels = c("Early", "Late", "B03", "B07"))
+
+
+p <-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme_MDS + xlab("Coordinate 1") + ylab("Coordinate 2")
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS + xlab("Coordinate 1") + ylab("Coordinate 3")
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS + xlab("Coordinate 2") + ylab("Coordinate 3")
+
+
+
+#Hospital
+df_fit$groups <- Pheno2$Hospital
+
+p <-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme_MDS + xlab("Coordinate 1") + ylab("Coordinate 2")
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS + xlab("Coordinate 1") + ylab("Coordinate 3")
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+ theme_MDS + xlab("Coordinate 2") + ylab("Coordinate 3")
+
+
+```
+
+## 2.3. Assess differences E vs L Rebound or between weeks
+```{r}
+rm(list = ls())
+load("../Meth/Analysis450K/RData/myLoad.RData")
+Pheno <- read.delim("../Meth/Analysis450K/Pheno450.txt")
+Pheno2 <- Pheno[-grep("A14",rownames(Pheno)),] # remove the woman
+
+PhenoInfo450 <- read.csv(file = "../../BCN02_Omics_paper/Meth/Info/targets450.csv") 
+clvars <- read.csv("../Meth/Info/Clinicalvars.csv")
+clvarsEvsL <- clvars  %>% filter(Group == "Late" | Group == "Early", Gender == 0) # Select 12 individuals eligilbe in EvsL analyses
+
+
+boxplot(Age ~ Group, clvarsEvsL)
+wilcox.test(Age ~ Group, clvarsEvsL) #pval = 0.106
+
+boxplot(CD4counts_BSL ~ Group, clvarsEvsL)
+wilcox.test(CD4counts_BSL ~ Group, clvarsEvsL) #pval = 0.9322
+
+boxplot(CD4_CD8Ratio_BSL ~ Group, clvarsEvsL)
+wilcox.test(CD4_CD8Ratio_BSL ~ Group, clvarsEvsL) # pval =0.7986
+
+boxplot(Mag_BSL ~ Group, clvarsEvsL)
+wilcox.test(Mag_BSL ~ Group, clvarsEvsL) # pval = 0.8627
+
+boxplot(Proviral ~ Group, clvarsEvsL)
+wilcox.test(Proviral ~ Group, clvarsEvsL) # pval = 0.3677
+
+
+```
+
+```{r}
+
+# Estimate cell types
+WBCest <- estimateCellCounts(RGSet450K)
+WBCest.df  <- as.data.frame(WBCest)
+
+setdiff(rownames(WBCest.df), Pheno$Sample_Name)
+
+rownames(WBCest.df ) <- rownames(Pheno)
+
+Pheno.WBCEst <- cbind(Pheno, WBCest.df)
+
+write.table(Pheno.WBCEst , "../Meth/Analysis450K/PhenoWBCest.txt")
+
+Pheno.WBCEst.EvsL <- Pheno.WBCEst[-grep("A14|B03|B07", rownames(Pheno.WBCEst)),]
+```
+
+
+
+## 2.4 Normalization - Quantile Normalization
+
+```{r}
+rm(list = ls())
+
+Pheno <- read.delim("../Meth/Analysis450K/Pheno450.txt")
+PhenoWBCest <- read.table("../Meth/Analysis450K/PhenoWBCest.txt")
+
+Pheno2 <- Pheno[-grep("A14",rownames(Pheno)),] # remove the woman
+load("../Meth/Analysis450K/RData/myLoad.RData")
+
+#Remove the only woman of the study to avoid sex confounding.
+colnames(RGSet450K) <- Pheno$Ind_time # change the name to A02.w0,etc.
+dim(RGSet450K)
+RGSet450K.1 <- RGSet450K[,-grep("A14", colnames(RGSet450K))]
+dim(RGSet450K.1)
+
+Pheno2$Ind_time <- factor(Pheno2$Ind_time, levels = unique(as.character(Pheno$Ind_time)))
+Pheno2$Individual <- factor(Pheno2$Individual, levels = unique(as.character(Pheno$Individual)))
+
+#Normalization (Quantile Norm)
+Betas.QN.GenomicRS <- preprocessQuantile(RGSet450K.1)
+Betas.QN.GenomicRS@
+Betas.QN <- getBeta(Betas.QN.GenomicRS)
+
+write.table(Betas.QN, file = "../Meth/Analysis450K/BetasQN.txt")
+```
+
+```{r}
+#Exploratory analysis normalized data.
+PCA.BetasQN <- prcomp(t(Betas.QN))
+
+PCAs_1_15 <- PCA.BetasQN$x[,seq(1,15)]
+
+phenotype <- PhenoWBCest[,seq(11,22)]
+phenotype$Hospital <- factor(phenotype$Hospital, levels = c("HC","HUGTIP"), labels = c(0,1))
+phenotype$Rebound <- factor(phenotype$Rebound, levels = c("Fast","Late"), labels = c(0,1))
+phenotype.1 <- phenotype[, seq(6, 12)]
+dim(PhenoWBCest)
+dim(phenotype.1)
+phenotype.1 <- phenotype.1[-grep("A14", phenotype$Individual),]
+
+cor.vector <- NULL
+app <- apply(PCAs_1_15, 2, function(x){
+  for (i in 1:ncol(phenotype.1)){
+    covariate <- phenotype.1[,i]
+    c <- cor(x = x, y = covariate, method = "spearman")
+    cor.vector <- c(cor.vector,c)
+    
+  }
+  return(cor.vector)
+})
+
+cor_df <- data.frame(app)
+rownames(cor_df) <- colnames(phenotype.1)
+cor_df
+cor_df.1 <- abs(cor_df)
+
+
+library(pheatmap)
+pheatmap(cor_df.1, cluster_rows = FALSE, cluster_cols = FALSE, 
+         breaks = seq(0,1,0.1), 
+         color = colorRampPalette(c("blue", "red"))(10), filename = "../Meth/Analysis450K/QCPlots/PCAsPheatmap.pdf")
+```
+
+```{r}
+#Evaluate differences on cell type proportions
+cor_df.2 <- t(cor_df.1)
+
+boxplot(CD8T ~ Rebound, PhenoWBCest)
+wilcox.test(CD8T ~ Rebound, PhenoWBCest) #0.7265
+
+boxplot(CD4T ~ Rebound, PhenoWBCest)
+wilcox.test(CD4T ~ Rebound, PhenoWBCest) #0.4409
+
+boxplot(NK ~ Rebound, PhenoWBCest)
+wilcox.test(NK ~ Rebound, PhenoWBCest) #0.6023
+
+
+boxplot(Bcell ~ Rebound, PhenoWBCest)
+wilcox.test(Bcell ~ Rebound, PhenoWBCest) #0.2784
+
+boxplot(Mono ~ Rebound, PhenoWBCest)
+wilcox.test(Mono ~ Rebound, PhenoWBCest) # 0.3788
+
+boxplot(Gran ~ Rebound, PhenoWBCest)
+wilcox.test(Gran ~ Rebound, PhenoWBCest) #0.65
+
+
+#Boxplot per week
+#Monocyte proportion increases after romidepsin. In all individuals. 
+
+
+PhenoWBCest$Week <- factor(PhenoWBCest$Week, levels = c("w0", "w1", "w6", "w10"))
+boxplot(CD8T ~ Week, PhenoWBCest)
+kruskal.test(CD8T ~ Week, PhenoWBCest) #0.6467
+
+boxplot(CD4T ~ Week, PhenoWBCest)
+kruskal.test(CD4T ~ Week, PhenoWBCest) #0.5206
+
+boxplot(NK ~ Week, PhenoWBCest)
+kruskal.test(NK ~ Week, PhenoWBCest) #0.9724
+
+boxplot(Bcell ~ Week, PhenoWBCest)
+kruskal.test(Bcell ~ Week, PhenoWBCest) #0.5138
+
+boxplot(Mono ~ Week, PhenoWBCest)
+kruskal.test(Mono ~ Week, PhenoWBCest) #0.006705
+
+boxplot(Gran ~ Week, PhenoWBCest)
+kruskal.test(Gran~ Week, PhenoWBCest) #0.1068
+
+#Boxplot per week - EvsL
+
+Pheno.WBCEst.EvsL <-PhenoWBCest[-grep("B03|B07|A14", PhenoWBCest$Individual),]
+
+p <- ggplot(Pheno.WBCEst.EvsL, aes(x=Week, y = CD8T, fill = Rebound))
+p + geom_boxplot(outlier.color = "transparent")
+
+p <- ggplot(Pheno.WBCEst.EvsL, aes(x=Week, y = CD4T, fill = Rebound))
+p + geom_boxplot(outlier.color = "transparent")
+
+p <- ggplot(Pheno.WBCEst.EvsL, aes(x=Week, y = NK, fill = Rebound))
+p + geom_boxplot(outlier.color = "transparent")
+
+p <- ggplot(Pheno.WBCEst.EvsL, aes(x=Week, y = Bcell, fill = Rebound))
+p + geom_boxplot(outlier.color = "transparent")
+
+p <- ggplot(Pheno.WBCEst.EvsL, aes(x=Week, y = Mono, fill = Rebound))
+p + geom_boxplot(outlier.color = "transparent")
+
+p <- ggplot(Pheno.WBCEst.EvsL, aes(x=Week, y = Gran, fill = Rebound))
+p + geom_boxplot(outlier.color = "transparent")
+
+
+
+Pheno.w0 <- subset(Pheno.WBCEst.EvsL, Pheno.WBCEst.EvsL$Week == "w0")
+wilcox.test(CD8T ~ Rebound, Pheno.w0) #0.93
+wilcox.test(CD4T ~ Rebound, Pheno.w0) #0.93
+wilcox.test(NK ~ Rebound, Pheno.w0) #0.68
+wilcox.test(Bcell ~ Rebound, Pheno.w0)  #0.36
+wilcox.test(Mono ~ Rebound, Pheno.w0)  # 1
+wilcox.test(Gran ~ Rebound, Pheno.w0) #NA
+
+
+
+Pheno.w1 <- subset(Pheno.WBCEst.EvsL, Pheno.WBCEst.EvsL$Week == "w1")
+wilcox.test(CD8T ~ Rebound, Pheno.w1) #0.93
+wilcox.test(CD4T ~ Rebound, Pheno.w1) #0.56
+wilcox.test(NK ~ Rebound, Pheno.w1) #0.68
+wilcox.test(Bcell ~ Rebound, Pheno.w1) #0.15
+wilcox.test(Mono ~ Rebound, Pheno.w1) #0.93
+wilcox.test(Gran ~ Rebound, Pheno.w1) #na
+
+
+
+Pheno.w6 <- subset(Pheno.WBCEst.EvsL, Pheno.WBCEst.EvsL$Week == "w6")
+wilcox.test(CD8T ~ Rebound, Pheno.w6) #0.68
+wilcox.test(CD4T ~ Rebound, Pheno.w6) #0.80
+wilcox.test(NK ~ Rebound, Pheno.w6) #0.80
+wilcox.test(Bcell ~ Rebound, Pheno.w6) #0.37
+wilcox.test(Mono ~ Rebound, Pheno.w6) #0.68
+wilcox.test(Gran ~ Rebound, Pheno.w6) #NA
+
+
+Pheno.w10 <- subset(Pheno.WBCEst.EvsL, Pheno.WBCEst.EvsL$Week == "w10")
+wilcox.test(CD8T ~ Rebound, Pheno.w10) #0.80
+wilcox.test(CD4T ~ Rebound, Pheno.w10) #0.57
+wilcox.test(NK ~ Rebound, Pheno.w10) #0.57
+wilcox.test(Bcell ~ Rebound, Pheno.w10) #0.57
+wilcox.test(Mono ~ Rebound, Pheno.w10) #0.80
+wilcox.test(Gran ~ Rebound, Pheno.w10) #NA
+
+
+```
+
+###2.3.1 Exploratory Analysis 
+
+#### Density Plots
+
+```{r}
+par(mfrow=c(2,2))
+densityPlot(as.matrix(Betas.QN), Pheno2$Rebound )
+colourCount = length(unique(Pheno2$Individual))
+getPalette = colorRampPalette(brewer.pal(8, "Dark2"))
+densityPlot(as.matrix(Betas.QN), Pheno2$Individual , pal = getPalette(colourCount))
+densityPlot(as.matrix(Betas.QN), Pheno2$Week )
+densityPlot(as.matrix(Betas.QN), Pheno2$Slide )
+densityPlot(as.matrix(Betas.QN), Pheno2$Hospital)
+
+```
+
+#### Boxplots
+
+```{r}
+par(mfrow=c(1,2))
+boxplot(Betas.QN, main = "Betas QN", las = 2, cex = 0.5)
+```
+
+#### MDS
+```{r}
+
+#MDS NORMALIZED (Beta Quantiles) data
+
+d <- dist(t(Betas.QN)) # euclidean distances between the rows
+fit <- cmdscale(d,eig=TRUE, k=4) # k is the number of dim
+
+df_fit <- data.frame(fit$points) 
+df_fit$Name <- sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )
+
+
+#According week
+groups <- rownames(df_fit)
+w0 <- grep("w0", groups)
+w1 <- grep("w1", groups)
+w6 <- grep("w6", groups)
+w10 <- grep("w10", groups)
+
+groups[w0] <- "w0"
+groups[w1] <- "w1"
+groups[w6] <- "w6"
+groups[w10] <- "w10"
+
+
+df_fit$groups <- groups
+df_fit$groups <- factor(df_fit$groups, levels = c("w0", "w1", "w6", "MAP", "w24"))
+
+#Define plot theme
+theme <- theme(panel.background = element_blank(),
+             panel.border=element_rect(fill=NA),
+             panel.grid.major = element_blank(),
+             panel.grid.minor = element_blank(),
+             strip.background=element_blank(),
+             axis.text.x=element_text(colour="black"),
+             axis.text.y=element_text(colour="black"),
+             axis.ticks=element_line(colour="black"),
+             plot.margin=unit(c(1,1,1,1),"line"))
+
+
+p<-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= Name))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= Name))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= Name ))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+
+
+
+
+#According rebound
+unique(df_fit$Name)
+groups <- rownames(df_fit)
+Early <- grep("A12|A14|B06|A04|A13|A15|B05|B10|B14", groups)
+Late <- grep("A02|A05|A09|B13", groups)
+B03 <- grep("B03", groups)
+B07 <- grep("B07", groups)
+
+
+groups[Early] <- "Early"
+groups[Late] <- "Late"
+groups[B03] <- "B03"
+groups[B07] <- "B07"
+
+
+df_fit$groups <- groups
+df_fit$groups <- factor(df_fit$groups, levels = c("Early", "Late", "B03", "B07"))
+
+
+p <- ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p + geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+
+p <- ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p + geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+
+p <- ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p + geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+
+
+
+#According Slide
+groups <- Pheno2$Slide
+df_fit$groups <- groups
+df_fit$groups <- factor(df_fit$groups)
+
+p<-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+
+
+
+#According Hospital
+groups <- Pheno2$Hospital
+df_fit$groups <- groups
+df_fit$groups <- factor(df_fit$groups)
+
+
+p<-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )))
+p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+
+```
+
+#### MDS QN per weeks (Evaluate Reb)
+```{r}
+rm(list = ls())
+Bval.QN <- read.table("../Meth/Analysis450K/BetasQN.txt") 
+dim(Bval.QN) #485512     56
+
+
+Pheno <- read.delim("../Meth/Analysis450K/Pheno450.txt")
+Pheno2 <- Pheno[-grep("A14",rownames(Pheno)),]
+
+
+Pheno2$Rebound <- factor(Pheno2$Rebound, levels = c("Fast", "Late", "Out"))
+Pheno2[which(Pheno2$Individual == "B03"),]$Rebound <- "Out"
+Pheno2[which(Pheno2$Individual == "B07"),]$Rebound <- "Out"
+
+
+Bval.QN.w0 <- Bval.QN[, grep("w0", colnames(Bval.QN))]
+Bval.QN.w1 <- Bval.QN[, grep("w1$", colnames(Bval.QN))]
+Bval.QN.w6 <- Bval.QN[, grep("w6", colnames(Bval.QN))]
+Bval.QN.w10 <- Bval.QN[, grep("w10", colnames(Bval.QN))]
+
+Pheno2.w0 <- Pheno2[grep("w0", Pheno2$Week), ]
+Pheno2.w1 <- Pheno2[grep("w1$", Pheno2$Week), ]
+Pheno2.w6 <- Pheno2[grep("w6", Pheno2$Week), ]
+Pheno2.w10 <- Pheno2[grep("w10", Pheno2$Week), ]
+
+#Define plot theme
+theme <- theme(panel.background = element_blank(),
+             panel.border=element_rect(fill=NA),
+             panel.grid.major = element_blank(),
+             panel.grid.minor = element_blank(),
+             strip.background=element_blank(),
+             axis.text.x=element_text(colour="black"),
+             axis.text.y=element_text(colour="black"),
+             axis.ticks=element_line(colour="black"),
+             plot.margin=unit(c(1,1,1,1),"line"))
+
+
+#w0
+
+d <- dist(t(Bval.QN.w0)) # euclidean distances between the rows
+fit <- cmdscale(d,eig=TRUE, k=4) # k is the number of dim
+
+df_fit <- data.frame(fit$points) 
+df_fit$Name <- sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )
+df_fit$groups <- Pheno2.w0$Rebound
+
+p<-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+p + stat_ellipse() + ggtitle("w0")
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+p + stat_ellipse() + ggtitle("w0")
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+p + stat_ellipse() + ggtitle("w0")
+
+
+
+#w1
+
+d <- dist(t(Bval.QN.w1)) # euclidean distances between the rows
+fit <- cmdscale(d,eig=TRUE, k=4) # k is the number of dim
+
+df_fit <- data.frame(fit$points) 
+df_fit$Name <- sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )
+df_fit$groups <- Pheno2.w1$Rebound
+
+p<-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+p + stat_ellipse() + ggtitle("w1")
+
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+p + stat_ellipse() + ggtitle("w1")
+
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+p + stat_ellipse() + ggtitle("w1")
+
+
+
+#w6
+
+d <- dist(t(Bval.QN.w6)) # euclidean distances between the rows
+fit <- cmdscale(d,eig=TRUE, k=4) # k is the number of dim
+
+df_fit <- data.frame(fit$points) 
+df_fit$Name <- sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )
+df_fit$groups <- Pheno2.w6$Rebound
+
+p<-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+p + stat_ellipse() + ggtitle("w6")
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+p + stat_ellipse() + ggtitle("w6")
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+p + stat_ellipse() + ggtitle("w6")
+
+
+#w10
+
+d <- dist(t(Bval.QN.w10)) # euclidean distances between the rows
+fit <- cmdscale(d,eig=TRUE, k=4) # k is the number of dim
+
+df_fit <- data.frame(fit$points) 
+df_fit$Name <- sapply(strsplit(rownames(df_fit), "[.]"), function(x) x[1] )
+df_fit$groups <- Pheno2.w10$Rebound
+
+p<-ggplot(df_fit ,aes(x=X1,y=X2,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 2")
+p + stat_ellipse() + ggtitle("w10")
+
+
+p<-ggplot(df_fit ,aes(x=X1,y=X3,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 1") + ylab("Coordinate 3")
+p + stat_ellipse() + ggtitle("w10")
+
+
+p<-ggplot(df_fit ,aes(x=X2,y=X3,color=groups, label= Name))
+p<-p+geom_point() + geom_text_repel(aes(label=Name), size =3)+theme + xlab("Coordinate 2") + ylab("Coordinate 3")
+p + stat_ellipse() + ggtitle("w10")
+
+
+
+```
+
+
+
+###2.3.3 Non-specific Filtering
+In this case we take the proves at percential 0.75, therefore the 25% of most variables probes. 
+
+```{r}
+# M with more variable pos.
+rm(list = ls())
+Bval.QN <- read.table("../Meth/Analysis450K/BetasQN.txt") 
+dim(Bval.QN) #485512     56
+Mval.QN <- beta2m(Bval.QN)
+
+sd <- apply(Mval.QN, 1, sd)
+plot(density(sd, na.rm = T))
+hist(sd)
+
+
+sd.o <- sort(sd) #order sd increasing
+sd.o_df <- data.frame(sd.o)
+head(sd.o_df)
+tail(sd.o_df)
+
+# plot sd results tp decide cut-off. 
+png("../Meth/Analysis450K/QCPlots/sd_BetaQN.png", res = 300, width = 3, height =3, units = "in",   pointsize = 5)
+plot(sd.o)
+abline(h=quantile(sd.o, probs=0.25), col = "red")
+abline(h=quantile(sd.o, probs=0.75), col = "blue")
+abline(h=quantile(sd.o, probs=0.80), col = "orange")
+abline(h=quantile(sd.o, probs=0.90), col = "yellow")
+abline(h=quantile(sd.o, probs=0.95), col = "pink")
+legend(100, 2.5, legend = c("P25", "P75", "P80", "P90", "P95"), col=c("red", "blue", "orange", "yellow", "pink"), lty =1)
+dev.off()
+
+
+CpGVariable <- sd.o[which(sd.o >quantile(sd.o, probs=0.75))]
+length(CpGVariable) #121378
+head(CpGVariable)
+
+
+Mval.QN1 <- Mval.QN[names(CpGVariable),]
+dim(Mval.QN) #485512     56
+dim(Mval.QN1) # 121378     56
+Bvalues.QN1 <- m2beta(Mval.QN1)
+
+write.table(Mval.QN1, file = "../Meth/Analysis450K/OutputFiles/QNMval_sel.txt")
+write.table(Bvalues.QN1, file = "../Meth/Analysis450K/OutputFiles/QNBetaval_sel.txt")
+
+
+```
+
+
+##2.4. Identify DMPs with Limma - Weeks
+
+```{r}
+
+dir.create("../Meth/Analysis450K/OutputFiles")
+dir.create("../Meth/Analysis450K/OutputFiles/DMPs_weeks")
+dir.create("../Meth/Analysis450K/OutputFiles/DMPs_weeks/LimmaBlock")
+dir.create("../Meth/Analysis450K/OutputFiles/DMPs_weeks/LimmaBlockAnnot")
+dir.create("../Meth/Analysis450K/OutputFiles/DMPs_weeks/LimmaBlockAnnot/adjpval")
+
+
+rm(list = ls())
+
+Mval.QN1 <- read.table("../Meth/Analysis450K/OutputFiles/QNMval_sel.txt")
+
+
+Pheno <- read.table("../Meth/Analysis450K/PhenoWBCest.txt")
+Pheno2 <- Pheno[-grep("A14",rownames(Pheno)),]
+
+
+# Read ann450K
+ann450k <- read.table("../Meth/Analysis450K/annot450.txt")
+
+# Limma Model
+Week <- factor(Pheno2$Week, levels = c("w0", "w1", "w6", "w10"))
+
+
+
+
+mod <- model.matrix(~0 + Week)
+colnames(mod)=levels(Week)
+
+
+
+contr.matrix_week <- makeContrasts(
+  
+  w1vsw0 = w1 - w0,
+  w6vsw0 = w6 - w0,
+  w10vsw0 = w10 - w0,
+  w6vsw1 = w6 - w1,
+  w10vsw1 = w10 - w1,
+  w10vsw6 = w10 - w6, 
+  
+  levels=colnames(mod))
+
+
+
+#DMPs
+
+cor <- duplicateCorrelation(Mval.QN1,mod,block=Pheno2$Individual)
+fit=lmFit(Mval.QN1,mod, block=Pheno2$Individual, correlation=cor$consensus)
+
+
+## SIMPLE COMPARISON
+fit1=contrasts.fit(fit, contrasts=contr.matrix_week)
+fit1.2=eBayes(fit1)
+summary(decideTests(fit1.2))
+
+
+#All CpGs
+for (i in  colnames(fit1.2$coefficients)){
+  toptable <-  topTable(fit1.2, coef=i, sort="p", n=Inf, adjust = "BH")
+  write.table( toptable, paste(paste("../Meth/Analysis450K/OutputFiles/DMPs_weeks/LimmaBlock/", i),".txt",sep=""),quote=F)
+  toptable.annotated <- merge(toptable,ann450k[,c("chr", "UCSC_RefGene_Name","Relation_to_Island","UCSC_RefGene_Group", "UCSC_RefGene_Accession",  "Probe_rs")],
+                              by="row.names")
+  toptable.annotated <-  subset(toptable.annotated, toptable.annotated$UCSC_RefGene_Name != "")
+  write.table(toptable.annotated, paste(paste("../Meth/Analysis450K/OutputFiles/DMPs_weeks/LimmaBlockAnnot/", i),".txt",sep=""),quote=F)
+}
+
+
+# CpGs with adjusted p-value < 0.2
+for (i in  colnames(fit1.2$coefficients)){
+  toptable <-  topTable(fit1.2, coef=i, sort="p", n=Inf, adjust = "BH", resort.by = "p", p.value = 0.2)
+ toptable.annotated <- merge(toptable,ann450k[,c("chr", "UCSC_RefGene_Name","Relation_to_Island","UCSC_RefGene_Group", "UCSC_RefGene_Accession",  "Probe_rs")],
+                              by="row.names")
+  toptable.annotated <-  subset(toptable.annotated, toptable.annotated$UCSC_RefGene_Name != "")
+  write.table(toptable.annotated, paste(paste("../Meth/Analysis450K/OutputFiles/DMPs_weeks/LimmaBlockAnnot/adjpval/", i),".txt",sep=""),quote=F)
+}
+```
+
+
+#Ajusted model per Rebound
+```{r}
+dir.create("../Meth/Analysis450K/OutputFiles")
+dir.create("../Meth/Analysis450K/OutputFiles/DMPs_rb")
+dir.create("../Meth/Analysis450K/OutputFiles/DMPs_rb/LimmaBlock")
+dir.create("../Meth/Analysis450K/OutputFiles/DMPs_rb/LimmaBlockAnnot")
+dir.create("../Meth/Analysis450K/OutputFiles/DMPs_rb/LimmaBlockAnnot/adjpval")
+
+rm(list = ls())
+
+Mval.QN1 <- read.table("../Meth/Analysis450K/OutputFiles/QNMval_sel.txt")
+Mval.QN1 <- Mval.QN1[, - grep("A14|B03|B07", colnames(Mval.QN1))]
+
+Pheno <- read.table("../Meth/Analysis450K/PhenoWBCest.txt")
+Pheno2 <- Pheno[-grep("A14|B03|B07",rownames(Pheno)),]
+
+
+# Read ann450K
+ann450k <- read.table("../Meth/Analysis450K/annot450.txt")
+
+
+
+Week_Rebound <- factor(paste(Pheno2$Week, Pheno2$Rebound, sep = "_"))
+
+mod1 <- model.matrix(~0 + Week_Rebound )
+colnames(mod1) <- c(levels(Week_Rebound))
+
+
+contr.matrix_rb1 <- makeContrasts(
+  
+  w10_FastvsLate = w10_Fast-w10_Late,
+  w6_FastvsLate =  w6_Fast-w6_Late,
+  w1_FastvsLate =  w1_Fast-w1_Late,
+  w0_FastvsLate =  w0_Fast-w0_Late,
+  
+  
+  FastvsLate = ((w0_Fast+w1_Fast+w6_Fast+w10_Fast)/4) - ((w0_Late+w1_Late+w6_Late+w10_Late)/4),
+
+  levels=colnames(mod1))
+
+
+fit=lmFit(Mval.QN1,mod1)
+
+
+## SIMPLE COMPARISON
+fit1=contrasts.fit(fit, contrasts=contr.matrix_rb1)
+fit1.2=eBayes(fit1)
+summary(decideTests(fit1.2))
+
+
+
+#All CpGs
+for (i in  colnames(fit1.2$coefficients)){
+  toptable <-  topTable(fit1.2, coef=i, sort="p", n=Inf, adjust = "BH")
+  write.table( toptable, paste(paste("../Meth/Analysis450K/OutputFiles/DMPs_rb/LimmaBlock/", i),".txt",sep=""),quote=F)
+  toptable.annotated <- merge(toptable,ann450k[,c("chr", "UCSC_RefGene_Name","Relation_to_Island","UCSC_RefGene_Group", "UCSC_RefGene_Accession",  "Probe_rs")],
+                              by="row.names")
+  toptable.annotated <-  subset(toptable.annotated, toptable.annotated$UCSC_RefGene_Name != "")
+  write.table(toptable.annotated, paste(paste("../Meth/Analysis450K/OutputFiles/DMPs_rb/LimmaBlockAnnot/", i),".txt",sep=""),quote=F)
+}
+
+
+```
+

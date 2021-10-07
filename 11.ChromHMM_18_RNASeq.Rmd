@@ -1,0 +1,629 @@
+---
+title: "LOLA"
+author: "Bruna Oriol"
+date: "8/2/2021"
+output: html_document
+---
+# Try to run ChromHMM
+```{r}
+# 
+# library(rtracklayer)
+# library(tidyverse)
+# bed <- import("../../E062_18_core_K27ac_dense.bed", format="bed")
+# bed.df <- as.data.frame(bed)
+# 
+# unique(bed.df$name)
+# 
+# state1_TssA <- bed.df %>% filter(name == "1_TssA")
+# state2_TssFlnk <- bed.df %>% filter(name == "2_TssFlnk")
+# state3_TssFlnkU <- bed.df %>% filter(name == "3_TssFlnkU")
+# state4_TssFlnkD <- bed.df %>% filter(name == "4_TssFlnkD")
+# state5_Tx <- bed.df %>% filter(name == "5_Tx")
+# state6_TxWk <- bed.df %>% filter(name == "6_TxWk")
+# state7_EnhG1 <- bed.df %>% filter(name == "7_EnhG1")
+# state8_EnhG2 <- bed.df %>% filter(name == "8_EnhG2")
+# state9_EnhA1 <- bed.df %>% filter(name == "9_EnhA1")
+# state10_EnhA2 <- bed.df %>% filter(name == "10_EnhA2")
+# state11_EnhWk <- bed.df %>% filter(name == "11_EnhWk")
+# state12_ZNFRpts <- bed.df %>% filter(name == "12_ZNF/Rpts")
+# state13_Het <- bed.df %>% filter(name == "13_Het")
+# state14_TssBiv <- bed.df %>% filter(name == "14_TssBiv")
+# state15_EnhBiv <- bed.df %>% filter(name == "15_EnhBiv")
+# state16_ReprPC <- bed.df %>% filter(name == "16_ReprPC")
+# state17_ReprPCWk <- bed.df %>% filter(name == "17_ReprPCWk")
+# state18_Quies <- bed.df %>% filter(name == "18_Quies")
+# 
+# 
+# dir.create("../../ChromHMM_18states_PBMC/")
+# dir.create("../../ChromHMM_18states_PBMC/hg19")
+# 
+# 
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state1_TssA")
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state1_TssA/regions")
+# write.table(state1_TssA, "../../ChromHMM_18states_PBMC/hg19/state1_TssA/regions/TssA_1.bed", quote = FALSE, row.names = FALSE, col.names = FALSE)
+# 
+# 
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state2_TssFlnk")
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state2_TssFlnk/regions")
+# write.table(state2_TssFlnk, "../../ChromHMM_18states_PBMC/hg19/state2_TssFlnk/regions/TssFlnk_2.bed", quote = FALSE, row.names = FALSE, col.names = FALSE)
+# 
+# 
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state3_TssFlnkU")
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state3_TssFlnkU/regions")
+# write.table(state3_TssFlnkU, "../../ChromHMM_18states_PBMC/hg19/state3_TssFlnkU/regions/TssFlnkU_3.bed", quote = FALSE, row.names = FALSE, col.names = FALSE)
+# 
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state4_TssFlnkD")
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state4_TssFlnkD/regions")
+# write.table(state4_TssFlnkD, "../../ChromHMM_18states_PBMC/hg19/state4_TssFlnkD/regions/TssFlnkD_4.bed", quote = FALSE, row.names = FALSE, col.names = FALSE)
+# 
+# 
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state5_Tx")
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state5_Tx/regions")
+# write.table(state5_Tx, "../../ChromHMM_18states_PBMC/hg19/state5_Tx/regions/Tx_5.bed", quote = FALSE, row.names = FALSE, col.names = FALSE)
+# 
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state6_TxWk")
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state6_TxWk/regions")
+# write.table(state6_TxWk, "../../ChromHMM_18states_PBMC/hg19/state6_TxWk/regions/TxWk_6.bed", quote = FALSE, row.names = FALSE, col.names = FALSE)
+# 
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state7_EnhG1")
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state7_EnhG1/regions")
+# write.table(state7_EnhG1, "../../ChromHMM_18states_PBMC/hg19/state7_EnhG1/regions/EnhG1_7.bed", quote = FALSE, row.names = FALSE, col.names = FALSE)
+# 
+# 
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state8_EnhG2")
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state8_EnhG2/regions")
+# write.table(state8_EnhG2, "../../ChromHMM_18states_PBMC/hg19/state8_EnhG2/regions/EnhG2_8.bed", quote = FALSE, row.names = FALSE, col.names = FALSE)
+# 
+# 
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state9_EnhA1")
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state9_EnhA1/regions")
+# write.table(state9_EnhA1, "../../ChromHMM_18states_PBMC/hg19/state9_EnhA1/regions/EnhA1_9.bed", quote = FALSE, row.names = FALSE, col.names = FALSE)
+# 
+# 
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state10_EnhA2")
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state10_EnhA2/regions")
+# write.table(state10_EnhA2, "../../ChromHMM_18states_PBMC/hg19/state10_EnhA2/regions/EnhA2_10.bed", quote = FALSE, row.names = FALSE, col.names = FALSE)
+# 
+# 
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state11_EnhWk")
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state11_EnhWk/regions")
+# write.table(state11_EnhWk, "../../ChromHMM_18states_PBMC/hg19/state11_EnhWk/regions/EnhWk_11.bed", quote = FALSE, row.names = FALSE, col.names = FALSE)
+# 
+# 
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state12_ZNFRpts")
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state12_ZNFRpts/regions")
+# write.table(state12_ZNFRpts, "../../ChromHMM_18states_PBMC/hg19/state12_ZNFRpts/regions/ZNFRpts_12.bed", quote = FALSE, row.names = FALSE, col.names = FALSE)
+# 
+# 
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state13_Het")
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state13_Het/regions")
+# write.table(state13_Het, "../../ChromHMM_18states_PBMC/hg19/state13_Het/regions/Het_13.bed", quote = FALSE, row.names = FALSE, col.names = FALSE)
+# 
+# 
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state14_TssBiv")
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state14_TssBiv/regions")
+# write.table(state14_TssBiv, "../../ChromHMM_18states_PBMC/hg19/state14_TssBiv/regions/TssBiv_14.bed", quote = FALSE, row.names = FALSE, col.names = FALSE)
+# 
+# 
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state15_EnhBiv")
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state15_EnhBiv/regions")
+# write.table(state15_EnhBiv, "../../ChromHMM_18states_PBMC/hg19/state15_EnhBiv/regions/EnhBiv_15.bed", quote = FALSE, row.names = FALSE, col.names = FALSE)
+# 
+# 
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state16_ReprPC")
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state16_ReprPC/regions")
+# write.table(state16_ReprPC, "../../ChromHMM_18states_PBMC/hg19/state16_ReprPC/regions/ReprPC_16.bed", quote = FALSE, row.names = FALSE, col.names = FALSE)
+# 
+# 
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state17_ReprPCWk")
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state17_ReprPCWk/regions")
+# write.table(state17_ReprPCWk, "../../ChromHMM_18states_PBMC/hg19/state17_ReprPCWk/regions/ReprPCWk_17.bed", quote = FALSE, row.names = FALSE, col.names = FALSE)
+# 
+# 
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state18_Quies")
+# dir.create("../../ChromHMM_18states_PBMC/hg19/state18_Quies/regions")
+# write.table(state18_Quies, "../../ChromHMM_18states_PBMC/hg19/state18_Quies/regions/Quies_18.bed", quote = FALSE, row.names = FALSE, col.names = FALSE)
+
+```
+
+```{r}
+options(scipen=999)
+
+library("LOLA")
+library("GenomicRanges")
+library("ggplot2")
+
+regionDB1 = loadRegionDB("~admin/../../Volumes/Sintítulo/BCN02_LateAnalysis/ChromHMM_18states_PBMC/hg19/")
+
+regionSet_w6w0 <- read.table("../RNASeq/HOMERres_new/HOMER.Up_w6.txt", header = TRUE)
+regionUniverse <- read.table("../RNASeq/HOMERres_new/bgsw6w0homer.txt", header = TRUE)
+regionUniverse <- regionUniverse[, c(2,3,4,1)]
+colnames(regionUniverse) <- c("chrom", "chromStart", "chromEnd", "name")
+regionUniverse <- regionUniverse[-1,]
+regionUniverse$chromStart <- format(regionUniverse$chromStart , scientific=F)
+regionUniverse$chromEnd <- format(regionUniverse$chromEnd, scientific=F)
+
+#regionUniverse[436529,]$chromEnd <- as.integer(regionUniverse[436529,]$chromStart)+1
+
+region.bed <- regionSet_w6w0[, c(2,3,4,1)]
+colnames(region.bed) <- c("chrom", "chromStart", "chromEnd", "name")
+region.bed <- region.bed[-1,]
+
+regionSet.gr <- GRanges(region.bed)
+regionUniverse.gr <- GRanges(regionUniverse)
+
+#userSetsRedefined =	redefineUserSets(regionSet.gr, regionUniverse.gr)
+
+locResults2 = runLOLA(regionSet.gr ,regionUniverse.gr, regionDB1, cores=2)
+locResults2$oddsRatio <- log2(locResults2$oddsRatio)
+locResults2$collection <- factor(locResults2$collection, levels = c("state1_TssA", "state2_TssFlnk", "state3_TssFlnkU", "state4_TssFlnkD", "state5_Tx",
+                                                                    "state6_TxWk", "state7_EnhG1", "state8_EnhG2", "state9_EnhA1", "state10_EnhA2",
+                                                                    "state11_EnhWk", "state12_ZNFRpts", "state13_Het", "state14_TssBiv",
+                                                                    "state15_EnhBiv", "state16_ReprPC", "state17_ReprPCWk", "state18_Quies"))
+g = plotTopLOLAEnrichments(locResults2)
+g
+
+
+xx = ggplot(locResults2, aes(x = "ChromHMM", y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = oddsRatio), alpha = 0.75, shape = 21) + 
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+  legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 12, face = "bold"), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient2()
+xx
+
+
+```
+
+
+```{r}
+regionSet_Hypow6_w6w0 <- read.table("../RNASeq/HOMERres_new/HOMER.Down_w6.txt")
+
+region.bed <- regionSet_Hypow6_w6w0[, c(2,3,4,1)]
+colnames(region.bed) <- c("chrom", "chromStart", "chromEnd", "name")
+region.bed <- region.bed[-1,]
+
+regionSet_Hypow6.gr <- GRanges(region.bed)
+regionUniverse.gr <- GRanges(regionUniverse)
+
+#userSetsRedefined =	redefineUserSets(regionSet_Hypow6.gr, regionUniverse.gr)
+
+locResults_Hypow6 = runLOLA(regionSet_Hypow6.gr ,regionUniverse.gr, regionDB1, cores=2)
+locResults_Hypow6$oddsRatio <- log2(locResults_Hypow6$oddsRatio)
+locResults_Hypow6$collection <- factor(locResults_Hypow6$collection, levels = c("state1_TssA", "state2_TssFlnk", "state3_TssFlnkU",
+                                                                                 "state4_TssFlnkD", "state5_Tx","state6_TxWk", "state7_EnhG1",
+                                                                                 "state8_EnhG2", "state9_EnhA1", "state10_EnhA2",
+                                                                                 "state11_EnhWk", "state12_ZNFRpts", "state13_Het", "state14_TssBiv",
+                                                                                 "state15_EnhBiv", "state16_ReprPC", "state17_ReprPCWk", "state18_Quies"))
+g = plotTopLOLAEnrichments(locResults_Hypow6)
+g
+
+xx = ggplot(locResults_Hypow6, aes(x = "ChromHMM", y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = oddsRatio), alpha = 0.75, shape = 21) + 
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+  legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 12, face = "bold"), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient2()
+xx
+
+
+```
+
+
+```{r}
+locResults2$DEG <- rep("Upregulated", 18)
+locResults_Hypow6$DEG <- rep("Downregulated", 18)
+
+Res_DEGs <- rbind(locResults2, locResults_Hypow6)
+Res_DEGs$collection <- sapply(strsplit(as.character(Res_DEGs$collection), "_"),function(x) x[2])
+Res_DEGs$collection <- factor(Res_DEGs$collection, c("Quies", "ReprPCWk", "ReprPC", "EnhBiv", "TssBiv", "Het", "ZNFRpts", "EnhWk", "EnhA2", "EnhA1", "EnhG2", "EnhG1", "TxWk", "Tx", "TssFlnkD", "TssFlnkU", "TssFlnk", "TssA"))
+
+colnames(Res_DEGs)[5] <- "log2FC"
+
+xx = ggplot(Res_DEGs , aes(x = DEG, y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = log2FC), alpha = 0.75, shape = 21) +  scale_size_continuous(range = c(3, 7))+
+  theme(legend.key=element_blank(), 
+  axis.text.x =element_text(colour = "black", size = 11), 
+  axis.text.y = element_text(colour = "black", size = 11), 
+  axis.title = element_blank(),
+  legend.text = element_text(size = 10,  colour ="black"), 
+  legend.title = element_text(size = 12), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+xx
+
+```
+
+
+
+#REDUC - PBMCs
+
+```{r}
+options(scipen=999)
+
+library("LOLA")
+library("GenomicRanges")
+library("ggplot2")
+
+regionDB1 = loadRegionDB("~admin/../../Volumes/Sintítulo/BCN02_LateAnalysis/ChromHMM_18states_PBMC/hg19/")
+
+regionSet_w6w0 <- read.table("../RNASeq/HOMERresREDUC/DEGs_UP_REDUC.txt", header = TRUE)
+regionUniverse <- read.table("../RNASeq/HOMERresREDUC/BackgroundREDUC.txt", header = TRUE)
+regionUniverse <- regionUniverse[, c(2,3,4,1)]
+colnames(regionUniverse) <- c("chrom", "chromStart", "chromEnd", "name")
+regionUniverse <- regionUniverse[-1,]
+regionUniverse$chromStart <- format(regionUniverse$chromStart , scientific=F)
+regionUniverse$chromEnd <- format(regionUniverse$chromEnd, scientific=F)
+
+#regionUniverse[436529,]$chromEnd <- as.integer(regionUniverse[436529,]$chromStart)+1
+
+region.bed <- regionSet_w6w0[, c(2,3,4,1)]
+colnames(region.bed) <- c("chrom", "chromStart", "chromEnd", "name")
+region.bed <- region.bed[-1,]
+
+regionSet.gr <- GRanges(region.bed)
+regionUniverse.gr <- GRanges(regionUniverse)
+
+#userSetsRedefined =	redefineUserSets(regionSet.gr, regionUniverse.gr)
+
+locResults2 = runLOLA(regionSet.gr ,regionUniverse.gr, regionDB1, cores=2)
+locResults2$oddsRatio <- log2(locResults2$oddsRatio)
+locResults2$collection <- factor(locResults2$collection, levels = c("state1_TssA", "state2_TssFlnk", "state3_TssFlnkU", "state4_TssFlnkD", "state5_Tx",
+                                                                    "state6_TxWk", "state7_EnhG1", "state8_EnhG2", "state9_EnhA1", "state10_EnhA2",
+                                                                    "state11_EnhWk", "state12_ZNFRpts", "state13_Het", "state14_TssBiv",
+                                                                    "state15_EnhBiv", "state16_ReprPC", "state17_ReprPCWk", "state18_Quies"))
+g = plotTopLOLAEnrichments(locResults2)
+g
+
+
+xx = ggplot(locResults2, aes(x = "ChromHMM", y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = oddsRatio), alpha = 0.75, shape = 21) + 
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+  legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 12, face = "bold"), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient2()
+xx
+
+
+```
+
+
+```{r}
+regionSet_Hypow6_w6w0 <- read.table("../RNASeq/HOMERresREDUC/DEGs_Down_REDUC.txt")
+
+region.bed <- regionSet_Hypow6_w6w0[, c(2,3,4,1)]
+colnames(region.bed) <- c("chrom", "chromStart", "chromEnd", "name")
+region.bed <- region.bed[-1,]
+
+regionSet_Hypow6.gr <- GRanges(region.bed)
+regionUniverse.gr <- GRanges(regionUniverse)
+
+#userSetsRedefined =	redefineUserSets(regionSet_Hypow6.gr, regionUniverse.gr)
+
+locResults_Hypow6 = runLOLA(regionSet_Hypow6.gr ,regionUniverse.gr, regionDB1, cores=2)
+locResults_Hypow6$oddsRatio <- log2(locResults_Hypow6$oddsRatio)
+locResults_Hypow6$collection <- factor(locResults_Hypow6$collection, levels = c("state1_TssA", "state2_TssFlnk", "state3_TssFlnkU",
+                                                                                 "state4_TssFlnkD", "state5_Tx","state6_TxWk", "state7_EnhG1",
+                                                                                 "state8_EnhG2", "state9_EnhA1", "state10_EnhA2",
+                                                                                 "state11_EnhWk", "state12_ZNFRpts", "state13_Het", "state14_TssBiv",
+                                                                                 "state15_EnhBiv", "state16_ReprPC", "state17_ReprPCWk", "state18_Quies"))
+g = plotTopLOLAEnrichments(locResults_Hypow6)
+g
+
+xx = ggplot(locResults_Hypow6, aes(x = "ChromHMM", y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = oddsRatio), alpha = 0.75, shape = 21) + 
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+  legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 12, face = "bold"), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient2()
+xx
+
+
+```
+
+
+```{r}
+locResults2$DEG <- rep("Upregulated", 18)
+locResults_Hypow6$DEG <- rep("Downregulated", 18)
+
+Res_DEGs <- rbind(locResults2, locResults_Hypow6)
+Res_DEGs$collection <- sapply(strsplit(as.character(Res_DEGs$collection), "_"),function(x) x[2])
+Res_DEGs$collection <- factor(Res_DEGs$collection, c("Quies", "ReprPCWk", "ReprPC", "EnhBiv", "TssBiv", "Het", "ZNFRpts", "EnhWk", "EnhA2", "EnhA1", "EnhG2", "EnhG1", "TxWk", "Tx", "TssFlnkD", "TssFlnkU", "TssFlnk", "TssA"))
+
+colnames(Res_DEGs)[5] <- "log2FC"
+
+xx = ggplot(Res_DEGs , aes(x = DEG, y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = log2FC), alpha = 0.75, shape = 21) +  scale_size_continuous(range = c(3, 7))+
+  theme(legend.key=element_blank(), 
+  axis.text.x =element_text(colour = "black", size = 11), 
+  axis.text.y = element_text(colour = "black", size = 11), 
+  axis.title = element_blank(),
+  legend.text = element_text(size = 10,  colour ="black"), 
+  legend.title = element_text(size = 12), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+xx
+
+
+```
+
+
+
+
+#REDUC - CD4
+
+```{r}
+options(scipen=999)
+
+library("LOLA")
+library("GenomicRanges")
+library("ggplot2")
+
+regionDB1 = loadRegionDB("~admin/../../Volumes/Sintítulo/BCN02_LateAnalysis/ChromHMM_18states_PBMC/hg19/")
+
+regionSet_w6w0 <- read.table("../RNASeq/HOMERresREDUC/DEGs_UP_REDUC_CD4.txt", header = TRUE)
+regionUniverse <- read.table("../RNASeq/HOMERresREDUC/BackgroundREDUC_CD4.txt", header = TRUE)
+regionUniverse <- regionUniverse[, c(2,3,4,1)]
+colnames(regionUniverse) <- c("chrom", "chromStart", "chromEnd", "name")
+regionUniverse <- regionUniverse[-1,]
+regionUniverse$chromStart <- format(regionUniverse$chromStart , scientific=F)
+regionUniverse$chromEnd <- format(regionUniverse$chromEnd, scientific=F)
+
+#regionUniverse[436529,]$chromEnd <- as.integer(regionUniverse[436529,]$chromStart)+1
+
+region.bed <- regionSet_w6w0[, c(2,3,4,1)]
+colnames(region.bed) <- c("chrom", "chromStart", "chromEnd", "name")
+region.bed <- region.bed[-1,]
+
+regionSet.gr <- GRanges(region.bed)
+regionUniverse.gr <- GRanges(regionUniverse)
+
+#userSetsRedefined =	redefineUserSets(regionSet.gr, regionUniverse.gr)
+
+locResults2 = runLOLA(regionSet.gr ,regionUniverse.gr, regionDB1, cores=2)
+locResults2$oddsRatio <- log2(locResults2$oddsRatio)
+locResults2$collection <- factor(locResults2$collection, levels = c("state1_TssA", "state2_TssFlnk", "state3_TssFlnkU", "state4_TssFlnkD", "state5_Tx",
+                                                                    "state6_TxWk", "state7_EnhG1", "state8_EnhG2", "state9_EnhA1", "state10_EnhA2",
+                                                                    "state11_EnhWk", "state12_ZNFRpts", "state13_Het", "state14_TssBiv",
+                                                                    "state15_EnhBiv", "state16_ReprPC", "state17_ReprPCWk", "state18_Quies"))
+g = plotTopLOLAEnrichments(locResults2)
+g
+
+
+xx = ggplot(locResults2, aes(x = "ChromHMM", y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = oddsRatio), alpha = 0.75, shape = 21) + 
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+  legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 12, face = "bold"), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient2()
+xx
+
+
+```
+
+
+```{r}
+regionSet_Hypow6_w6w0 <- read.table("../RNASeq/HOMERresREDUC/DEGs_Down_REDUC_CD4.txt")
+
+region.bed <- regionSet_Hypow6_w6w0[, c(2,3,4,1)]
+colnames(region.bed) <- c("chrom", "chromStart", "chromEnd", "name")
+region.bed <- region.bed[-1,]
+
+regionSet_Hypow6.gr <- GRanges(region.bed)
+regionUniverse.gr <- GRanges(regionUniverse)
+
+#userSetsRedefined =	redefineUserSets(regionSet_Hypow6.gr, regionUniverse.gr)
+
+locResults_Hypow6 = runLOLA(regionSet_Hypow6.gr ,regionUniverse.gr, regionDB1, cores=2)
+locResults_Hypow6$oddsRatio <- log2(locResults_Hypow6$oddsRatio)
+locResults_Hypow6$collection <- factor(locResults_Hypow6$collection, levels = c("state1_TssA", "state2_TssFlnk", "state3_TssFlnkU",
+                                                                                 "state4_TssFlnkD", "state5_Tx","state6_TxWk", "state7_EnhG1",
+                                                                                 "state8_EnhG2", "state9_EnhA1", "state10_EnhA2",
+                                                                                 "state11_EnhWk", "state12_ZNFRpts", "state13_Het", "state14_TssBiv",
+                                                                                 "state15_EnhBiv", "state16_ReprPC", "state17_ReprPCWk", "state18_Quies"))
+g = plotTopLOLAEnrichments(locResults_Hypow6)
+g
+
+xx = ggplot(locResults_Hypow6, aes(x = "ChromHMM", y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = oddsRatio), alpha = 0.75, shape = 21) + 
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+  legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 12, face = "bold"), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient2()
+xx
+
+
+```
+
+
+```{r}
+locResults2$DEG <- rep("Upregulated", 18)
+locResults_Hypow6$DEG <- rep("Downregulated", 18)
+
+Res_DEGs <- rbind(locResults2, locResults_Hypow6)
+Res_DEGs$collection <- sapply(strsplit(as.character(Res_DEGs$collection), "_"),function(x) x[2])
+Res_DEGs$collection <- factor(Res_DEGs$collection, c("Quies", "ReprPCWk", "ReprPC", "EnhBiv", "TssBiv", "Het", "ZNFRpts", "EnhWk", "EnhA2", "EnhA1", "EnhG2", "EnhG1", "TxWk", "Tx", "TssFlnkD", "TssFlnkU", "TssFlnk", "TssA"))
+
+colnames(Res_DEGs)[5] <- "log2FC"
+
+xx = ggplot(Res_DEGs , aes(x = DEG, y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = log2FC), alpha = 0.75, shape = 21) +  scale_size_continuous(range = c(3, 7))+
+  theme(legend.key=element_blank(), 
+  axis.text.x =element_text(colour = "black", size = 11), 
+  axis.text.y = element_text(colour = "black", size = 11), 
+  axis.title = element_blank(),
+  legend.text = element_text(size = 10,  colour ="black"), 
+  legend.title = element_text(size = 12), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+xx
+
+
+
+yy = ggplot(Res_DEGs , aes(x = DEG, y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = log2FC), alpha = 0.75, shape = 21) +  scale_size_continuous(range = c(3, 7))+
+  theme(legend.key=element_blank(), 
+  axis.text.x =element_text(colour = "black", size = 11), 
+  axis.text.y = element_text(colour = "black", size = 11), 
+  axis.title = element_blank(),
+  legend.text = element_text(size = 10,  colour ="black"), 
+  legend.title = element_text(size = 12), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+yy
+```
+
+
+
+
+
+
+# BCN02 Week6 Rebound (EvsL)
+
+```{r}
+rm(list = ls())
+
+options(scipen=999)
+
+library("LOLA")
+library("GenomicRanges")
+library("ggplot2")
+
+regionDB1 = loadRegionDB("~admin/../../Volumes/Sintítulo/ChromHMM_18states_PBMC/hg19/")
+
+regionSet_w6Rb <- read.table("../RNASeq/HOMERres/HOMER.UpEvsL_w6.txt", header = TRUE)
+regionUniverse <- read.table("../RNASeq/HOMERres/bgsw6Rbhomer.txt", header = TRUE)
+regionUniverse <- regionUniverse[, c(2,3,4,1)]
+colnames(regionUniverse) <- c("chrom", "chromStart", "chromEnd", "name")
+regionUniverse <- regionUniverse[-1,]
+regionUniverse$chromStart <- format(regionUniverse$chromStart , scientific=F)
+regionUniverse$chromEnd <- format(regionUniverse$chromEnd, scientific=F)
+
+#regionUniverse[436529,]$chromEnd <- as.integer(regionUniverse[436529,]$chromStart)+1
+
+region.bed <- regionSet_w6Rb[, c(2,3,4,1)]
+colnames(region.bed) <- c("chrom", "chromStart", "chromEnd", "name")
+region.bed <- region.bed[-1,]
+
+regionSet.gr <- GRanges(region.bed)
+regionUniverse.gr <- GRanges(regionUniverse)
+
+#userSetsRedefined =	redefineUserSets(regionSet.gr, regionUniverse.gr)
+
+locResults2 = runLOLA(regionSet.gr ,regionUniverse.gr, regionDB1, cores=2)
+locResults2$oddsRatio <- log2(locResults2$oddsRatio)
+locResults2$collection <- factor(locResults2$collection, levels = c("state1_TssA", "state2_TssFlnk", "state3_TssFlnkU", "state4_TssFlnkD", "state5_Tx",
+                                                                    "state6_TxWk", "state7_EnhG1", "state8_EnhG2", "state9_EnhA1", "state10_EnhA2",
+                                                                    "state11_EnhWk", "state12_ZNFRpts", "state13_Het", "state14_TssBiv",
+                                                                    "state15_EnhBiv", "state16_ReprPC", "state17_ReprPCWk", "state18_Quies"))
+g = plotTopLOLAEnrichments(locResults2)
+g
+
+
+xx = ggplot(locResults2, aes(x = "ChromHMM", y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = oddsRatio), alpha = 0.75, shape = 21) + 
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+  legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 12, face = "bold"), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient2()
+xx
+
+
+```
+
+
+```{r}
+regionSet_Downw6Rb <- read.table("../RNASeq/HOMERres/HOMER.DownEvsL_w6.txt", header = TRUE)
+
+region.bed <- regionSet_Downw6Rb[, c(2,3,4,1)]
+colnames(region.bed) <- c("chrom", "chromStart", "chromEnd", "name")
+region.bed <- region.bed[-1,]
+
+regionSet_Downw6.gr <- GRanges(region.bed)
+regionUniverse.gr <- GRanges(regionUniverse)
+
+#userSetsRedefined =	redefineUserSets(regionSet_Downw6.gr, regionUniverse.gr)
+
+locResults_Downw6 = runLOLA(regionSet_Downw6.gr ,regionUniverse.gr, regionDB1, cores=2)
+locResults_Downw6$oddsRatio <- log2(locResults_Downw6$oddsRatio)
+locResults_Downw6$collection <- factor(locResults_Downw6$collection, levels = c("state1_TssA", "state2_TssFlnk", "state3_TssFlnkU",
+                                                                                 "state4_TssFlnkD", "state5_Tx","state6_TxWk", "state7_EnhG1",
+                                                                                 "state8_EnhG2", "state9_EnhA1", "state10_EnhA2",
+                                                                                 "state11_EnhWk", "state12_ZNFRpts", "state13_Het", "state14_TssBiv",
+                                                                                 "state15_EnhBiv", "state16_ReprPC", "state17_ReprPCWk", "state18_Quies"))
+g = plotTopLOLAEnrichments(locResults_Downw6)
+g
+
+xx = ggplot(locResults_Downw6, aes(x = "ChromHMM", y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = oddsRatio), alpha = 0.75, shape = 21) + 
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+  legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 12, face = "bold"), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient2()
+xx
+
+
+```
+
+
+```{r}
+locResults2$DEG <- rep("Upregulated", 18)
+locResults_Downw6$DEG <- rep("Downregulated", 18)
+
+#q-value can't be computed for Downregulated genes, remove q-value column in Upregulated genes as well.
+locResults2 <- locResults2[, -c("qValue")]
+Res_DEGs <- rbind(locResults2, locResults_Downw6)
+Res_DEGs$collection <- sapply(strsplit(as.character(Res_DEGs$collection), "_"),function(x) x[2])
+Res_DEGs$collection <- factor(Res_DEGs$collection, c("Quies", "ReprPCWk", "ReprPC", "EnhBiv", "TssBiv", "Het", "ZNFRpts", "EnhWk", "EnhA2", "EnhA1", "EnhG2", "EnhG1", "TxWk", "Tx", "TssFlnkD", "TssFlnkU", "TssFlnk", "TssA"))
+
+colnames(Res_DEGs)[5] <- "log2FC"
+
+xx = ggplot(Res_DEGs , aes(x = DEG, y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = log2FC), alpha = 0.75, shape = 21) +  scale_size_continuous(range = c(3, 7))+
+  theme(legend.key=element_blank(), 
+  axis.text.x =element_text(colour = "black", size = 11), 
+  axis.text.y = element_text(colour = "black", size = 11), 
+  axis.title = element_blank(),
+  legend.text = element_text(size = 10,  colour ="black"), 
+  legend.title = element_text(size = 12), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+xx
+
+
+yy = ggplot(Res_DEGs , aes(x = DEG, y = collection)) + 
+  geom_point(aes(size = pValueLog, fill = log2FC), alpha = 0.75, shape = 21) +  scale_size_continuous(range = c(3, 7))+
+  theme(legend.key=element_blank(), 
+  axis.text.x =element_text(colour = "black", size = 11), 
+  axis.text.y = element_text(colour = "black", size = 11), 
+  axis.title = element_blank(),
+  legend.text = element_text(size = 10,  colour ="black"), 
+  legend.title = element_text(size = 12), 
+  panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+  legend.position = "right") + scale_fill_gradient(low = "blue", high = "red")
+yy
+```
