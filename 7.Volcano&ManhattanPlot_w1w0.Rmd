@@ -1,7 +1,5 @@
 ---
 title: "Figures_afterw1"
-author: "Bruna Oriol"
-date: "13/3/2021"
 output: html_document
 ---
 #1. Volcano and Manhattan plot for DMPs w1-w0
