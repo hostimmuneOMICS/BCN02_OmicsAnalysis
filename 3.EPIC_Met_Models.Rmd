@@ -1,7 +1,5 @@
 ---
-title: "Methylation"
-author: "Bruna Oriol"
-date: "6/4/2020"
+title: "Methylation Analysis EPIC Array"
 output: html_document
 ---
 
