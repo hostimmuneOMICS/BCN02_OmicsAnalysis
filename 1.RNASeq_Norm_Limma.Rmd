@@ -1,6 +1,5 @@
 ---
-title: "RNASeq Analysis on BCN02 - Keystone Presentation"
-author: "Bruna Oriol"
+title: "RNASeq Analysis on BCN02"
 output:
   html_document:
     toc: true
@@ -42,27 +41,13 @@ From the 15 participants of the study 14 interrupt the treatment in the MAP:
 
 ** Questions of the study **
 
-1.Profiles RNA-Seq along the time.
 
-+ DEG between timepoints
-+ Exploratory Data Analysis
-+ Profiles based on the DEGs
-+ Are these transcriptomics profiles different between individuals with Early/Late rebound?
-
-
-2.Methylation impact of kick and kill
-
-First analysis on DNA Methylation showed no major differences between the different timepoints but between individuals
-(Only with 450K array)
-
-+ DNA Methylation profiles associated with Early
 
 
 # 2. TRANSCRIPTOMICS ANALYSIS - Data Normalization and Exploration
 
 ##1. Data Pre-processing
 
-The RNA-Seq was done in CNAG. Ana Esteve was the person who did the QC of the reads, the alignment (using STAR software) and the reads quantification (using RSEM software). Finally, she retrieved the Count Matrix and normalized the data using TMM. Also, she did first analyses on DEG using limma + voom, she did some GEA and GSEA and also applied MFuzz to study expression profiles. 
 ```{r libraries, include = F, warning=F}
 
 library(limma)
