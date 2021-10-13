@@ -1,7 +1,5 @@
 ---
-title: "LOLA"
-author: "Bruna Oriol"
-date: "8/2/2021"
+title: "LOLA ChromHMM Meth"
 output: html_document
 ---
 # Try to run ChromHMM
