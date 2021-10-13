@@ -1,7 +1,5 @@
 ---
-title: "LOLA-Acetylation marks"
-author: "Bruna Oriol"
-date: "9/2/2021"
+title: "LOLA-Acetylation marks RNA-Seq"
 output: html_document
 ---
 
