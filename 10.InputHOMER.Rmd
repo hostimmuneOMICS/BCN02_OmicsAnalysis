@@ -1,7 +1,5 @@
 ---
 title: "Prepare input HOMER"
-author: "Bruna Oriol"
-date: "18/1/2021"
 output: html_document
 ---
 
