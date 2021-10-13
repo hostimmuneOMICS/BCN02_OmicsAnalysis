@@ -1,7 +1,5 @@
 ---
 title: "MFuzz_RNASeq_w0w1w6"
-author: "Bruna Oriol"
-date: "30/8/2020"
 output: html_document
 ---
 
