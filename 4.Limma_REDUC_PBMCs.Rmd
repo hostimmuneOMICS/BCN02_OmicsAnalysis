@@ -1,7 +1,5 @@
 ---
-title: "Limma REDUC PBMCs"
-author: "Bruna Oriol"
-date: "November 11, 2020"
+title: "Transcriptomics Analysis in REDUC"
 output: html_document
 ---
 
