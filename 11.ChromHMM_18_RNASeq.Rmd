@@ -1,5 +1,5 @@
 ---
-title: "LOLA ChromHMM Enrichment DNAm "
+title: "LOLA ChromHMM Enrichment RNA-Seq "
 output: html_document
 ---
 # Try to run ChromHMM
